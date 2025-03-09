@@ -180,10 +180,66 @@ test "decodeREG" {
     }
 }
 
+const ImmediateTypeTag = enum {
+    byte,
+    word,
+};
+
+const Immediate = union(ImmediateTypeTag) {
+    byte: u8,
+    word: u16,
+};
+
+const SrcTypeTag = enum {
+    register,
+    immediate,
+};
+
+const DstTypeTag = enum {
+    register,
+};
+
+const SrcType = union(SrcTypeTag) {
+    register: Register,
+    immediate: Immediate,
+
+    pub fn format(
+        src_type: SrcType,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        switch (src_type) {
+            .register => |reg| return writer.print("{s}", .{std.enums.tagName(Register, reg).?}),
+            .immediate => |i| switch (i) {
+                .byte => |b| return writer.print("{d}", .{b}),
+                .word => |w| return writer.print("{d}", .{w}),
+            },
+        }
+        unreachable;
+    }
+};
+
+const DstType = union(DstTypeTag) {
+    register: Register,
+
+    pub fn format(
+        dst_type: DstType,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        switch (dst_type) {
+            .register => |reg| return writer.print("{s}", .{std.enums.tagName(Register, reg).?}),
+        }
+        unreachable;
+    }
+};
+
 const Instruction = struct {
-    Op: OpCode,
-    Src: Register,
-    Dst: Register,
+    op: OpCode,
+    src: SrcType,
+    dst: DstType,
 
     pub fn format(
         instruction: Instruction,
@@ -191,11 +247,8 @@ const Instruction = struct {
         _: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
-        const op = std.enums.tagName(OpCode, instruction.Op);
-        const srcReg = std.enums.tagName(Register, instruction.Src);
-        const dstReg = std.enums.tagName(Register, instruction.Dst);
-
-        return writer.print("{s} {s}, {s}", .{ op.?, dstReg.?, srcReg.? });
+        const op = std.enums.tagName(OpCode, instruction.op);
+        return writer.print("{s} {}, {}", .{ op.?, instruction.dst, instruction.src });
     }
 };
 
@@ -210,9 +263,13 @@ fn decodeInstruction(byte_1: u8, byte_2: u8) Instruction {
     const rm = decodeRM(mode, operand, byte_2);
 
     return Instruction{
-        .Op = decodeOpcode(byte_1),
-        .Src = if (dir == Direction.FromRegister) reg else rm,
-        .Dst = if (dir == Direction.ToRegister) reg else rm,
+        .op = decodeOpcode(byte_1),
+        .src = SrcType{
+            .register = if (dir == Direction.FromRegister) reg else rm,
+        },
+        .dst = DstType{
+            .register = if (dir == Direction.ToRegister) reg else rm,
+        },
     };
 }
 
@@ -225,25 +282,37 @@ test "decodeInstruction" {
         .{
             .in = [2]u8{ 0b10001001, 0b11000011 },
             .expected = .{
-                .Op = OpCode.MOV,
-                .Src = Register.AX,
-                .Dst = Register.BX,
+                .op = OpCode.MOV,
+                .src = SrcType{
+                    .register = Register.AX,
+                },
+                .dst = DstType{
+                    .register = Register.BX,
+                },
             },
         },
         .{
             .in = [2]u8{ 0b10001011, 0b11000011 },
             .expected = .{
-                .Op = OpCode.MOV,
-                .Src = Register.BX,
-                .Dst = Register.AX,
+                .op = OpCode.MOV,
+                .src = SrcType{
+                    .register = Register.BX,
+                },
+                .dst = DstType{
+                    .register = Register.AX,
+                },
             },
         },
         .{
             .in = [2]u8{ 0b10001000, 0b11000011 },
             .expected = .{
-                .Op = OpCode.MOV,
-                .Src = Register.AL,
-                .Dst = Register.BL,
+                .op = OpCode.MOV,
+                .src = SrcType{
+                    .register = Register.AL,
+                },
+                .dst = DstType{
+                    .register = Register.BL,
+                },
             },
         },
     };
