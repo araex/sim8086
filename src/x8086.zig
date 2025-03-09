@@ -1,20 +1,26 @@
 const std = @import("std");
 const assert = @import("std").debug.assert;
+const native_endian = @import("builtin").target.cpu.arch.endian();
 
 pub const OpCode = enum {
     Unknown,
-    MOV,
+    mov_rm_to_from_rm,
+    mov_imm_to_r,
 };
 
 pub fn decodeOpcode(byte: u8) OpCode {
-    const mask_opcode = 0b11111100;
+    // Table 4-12: https://edge.edx.org/c4x/BITSPilani/EEE231/asset/8086_family_Users_Manual_1_.pdf
+    const mask_4 = 0b11110000;
+    const mask_6 = 0b11111100;
 
-    // Register/memory to/from register
-    const opcode_mov = 0b10001000;
-    if (byte & mask_opcode == opcode_mov) {
-        return OpCode.MOV;
+    if (byte & mask_4 == 0b10110000) {
+        return OpCode.mov_imm_to_r;
+    } else if (byte & mask_6 == 0b10001000) {
+        return OpCode.mov_rm_to_from_rm;
+    } else {
+        @branchHint(.cold);
+        return OpCode.Unknown;
     }
-    return OpCode.Unknown;
 }
 
 test "decodeOpcode" {
@@ -25,10 +31,11 @@ test "decodeOpcode" {
     const test_cases = [_]TestCase{
         .{ .in = 0b10011000, .expected = .Unknown },
         .{ .in = 0b10001100, .expected = .Unknown },
-        // MOV
-        .{ .in = 0b10001000, .expected = .MOV },
-        .{ .in = 0b10001010, .expected = .MOV },
-        .{ .in = 0b10001011, .expected = .MOV },
+        .{ .in = 0b10001000, .expected = .mov_rm_to_from_rm },
+        .{ .in = 0b10001010, .expected = .mov_rm_to_from_rm },
+        .{ .in = 0b10001011, .expected = .mov_rm_to_from_rm },
+        .{ .in = 0b10110000, .expected = .mov_imm_to_r },
+        .{ .in = 0b10111011, .expected = .mov_imm_to_r },
     };
 
     for (test_cases) |case| {
@@ -45,27 +52,29 @@ const Direction = enum {
     FromRegister, // Instruction source is specified in REG field
 };
 
-fn decodeDirection(byte: u8) Direction {
+fn decodeDirectionBit(mask_dir_bit: u8, byte: u8) Direction {
     // Table 4-7: https://edge.edx.org/c4x/BITSPilani/EEE231/asset/8086_family_Users_Manual_1_.pdf
-    const mask_mode = 0b00000010;
-    const masked = byte & mask_mode;
-    if (masked == 0b00000000) return Direction.FromRegister;
-    if (masked == 0b00000010) return Direction.ToRegister;
-    unreachable;
+    const masked = byte & mask_dir_bit;
+    if (masked == 0b00000000) {
+        return Direction.FromRegister;
+    } else {
+        return Direction.ToRegister;
+    }
 }
 
-const OperatesOn = enum {
+const Wide = enum {
     Byte,
     Word,
 };
 
-fn decodeOperatesOn(byte: u8) OperatesOn {
+fn decodeWideBit(mask_wide_bit: u8, byte: u8) Wide {
     // Table 4-7: https://edge.edx.org/c4x/BITSPilani/EEE231/asset/8086_family_Users_Manual_1_.pdf
-    const mask_mode = 0b00000001;
-    const masked = byte & mask_mode;
-    if (masked == 0b00000000) return OperatesOn.Byte;
-    if (masked == 0b00000001) return OperatesOn.Word;
-    unreachable;
+    const masked = byte & mask_wide_bit;
+    if (masked == 0b00000000) {
+        return Wide.Byte;
+    } else {
+        return Wide.Word;
+    }
 }
 
 const Mode = enum {
@@ -117,62 +126,55 @@ fn lookupRegisterWord(raw: u8) Register {
     unreachable;
 }
 
-fn lookupRegister(operand: OperatesOn, byte: u8) Register {
-    switch (operand) {
-        OperatesOn.Byte => {
+fn lookupRegister(wide: Wide, byte: u8) Register {
+    switch (wide) {
+        Wide.Byte => {
             return lookupRegisterByte(byte);
         },
-        OperatesOn.Word => {
+        Wide.Word => {
             return lookupRegisterWord(byte);
         },
     }
     unreachable;
 }
 
-fn decodeREG(operand: OperatesOn, byte: u8) Register {
-    const mask_reg = 0b00111000;
-    const masked = byte & mask_reg;
-    const shifted = masked >> 3;
-    return lookupRegister(operand, shifted);
-}
-
-fn decodeRM(mode: Mode, operand: OperatesOn, byte: u8) Register {
+fn decodeRM(mode: Mode, wide: Wide, byte: u8) Register {
     // Table 4-10: https://edge.edx.org/c4x/BITSPilani/EEE231/asset/8086_family_Users_Manual_1_.pdf
     assert(mode == Mode.Reg);
     const mask_reg = 0b00000111;
     const masked = byte & mask_reg;
-    return lookupRegister(operand, masked);
+    return lookupRegister(wide, masked);
 }
 
-test "decodeREG" {
+test "lookupRegister" {
     const TestCase = struct {
         in: u8,
-        operand: OperatesOn,
+        wide: Wide,
         expected: Register,
     };
     const test_cases = [_]TestCase{
         // Byte
-        .{ .in = 0b00000000, .operand = OperatesOn.Byte, .expected = .AL },
-        .{ .in = 0b00001000, .operand = OperatesOn.Byte, .expected = .CL },
-        .{ .in = 0b00010000, .operand = OperatesOn.Byte, .expected = .DL },
-        .{ .in = 0b00011000, .operand = OperatesOn.Byte, .expected = .BL },
-        .{ .in = 0b00100000, .operand = OperatesOn.Byte, .expected = .AH },
-        .{ .in = 0b00101000, .operand = OperatesOn.Byte, .expected = .CH },
-        .{ .in = 0b00110000, .operand = OperatesOn.Byte, .expected = .DH },
-        .{ .in = 0b00111000, .operand = OperatesOn.Byte, .expected = .BH },
+        .{ .in = 0b00000000, .wide = Wide.Byte, .expected = .AL },
+        .{ .in = 0b00000001, .wide = Wide.Byte, .expected = .CL },
+        .{ .in = 0b00000010, .wide = Wide.Byte, .expected = .DL },
+        .{ .in = 0b00000011, .wide = Wide.Byte, .expected = .BL },
+        .{ .in = 0b00000100, .wide = Wide.Byte, .expected = .AH },
+        .{ .in = 0b00000101, .wide = Wide.Byte, .expected = .CH },
+        .{ .in = 0b00000110, .wide = Wide.Byte, .expected = .DH },
+        .{ .in = 0b00000111, .wide = Wide.Byte, .expected = .BH },
         // Word
-        .{ .in = 0b00000000, .operand = OperatesOn.Word, .expected = .AX },
-        .{ .in = 0b00001000, .operand = OperatesOn.Word, .expected = .CX },
-        .{ .in = 0b00010000, .operand = OperatesOn.Word, .expected = .DX },
-        .{ .in = 0b00011000, .operand = OperatesOn.Word, .expected = .BX },
-        .{ .in = 0b00100000, .operand = OperatesOn.Word, .expected = .SP },
-        .{ .in = 0b00101000, .operand = OperatesOn.Word, .expected = .BP },
-        .{ .in = 0b00110000, .operand = OperatesOn.Word, .expected = .SI },
-        .{ .in = 0b00111000, .operand = OperatesOn.Word, .expected = .DI },
+        .{ .in = 0b00000000, .wide = Wide.Word, .expected = .AX },
+        .{ .in = 0b00000001, .wide = Wide.Word, .expected = .CX },
+        .{ .in = 0b00000010, .wide = Wide.Word, .expected = .DX },
+        .{ .in = 0b00000011, .wide = Wide.Word, .expected = .BX },
+        .{ .in = 0b00000100, .wide = Wide.Word, .expected = .SP },
+        .{ .in = 0b00000101, .wide = Wide.Word, .expected = .BP },
+        .{ .in = 0b00000110, .wide = Wide.Word, .expected = .SI },
+        .{ .in = 0b00000111, .wide = Wide.Word, .expected = .DI },
     };
 
     for (test_cases) |case| {
-        const actual = decodeREG(case.operand, case.in);
+        const actual = lookupRegister(case.wide, case.in);
         if (actual != case.expected) {
             std.debug.print("0b{b}: want: {}, got: {}\n", .{ case.in, case.expected, actual });
             return error.TestExpectedEqual;
@@ -247,42 +249,99 @@ const Instruction = struct {
         _: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
-        const op = std.enums.tagName(OpCode, instruction.op);
-        return writer.print("{s} {}, {}", .{ op.?, instruction.dst, instruction.src });
+        const op = switch (instruction.op) {
+            OpCode.mov_rm_to_from_rm => "mov",
+            OpCode.mov_imm_to_r => "mov",
+            OpCode.Unknown => "<unknown>",
+        };
+        return writer.print("{s} {}, {}", .{ op, instruction.dst, instruction.src });
     }
 };
 
-fn decodeInstruction(byte_1: u8, byte_2: u8) Instruction {
-    const dir = decodeDirection(byte_1);
-    const operand = decodeOperatesOn(byte_1);
+fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
+    const byte_1 = try reader.readByte();
+    const op = decodeOpcode(byte_1);
 
-    const mode = decodeMode(byte_2);
-    assert(mode == Mode.Reg);
+    switch (op) {
+        OpCode.mov_rm_to_from_rm => {
+            const dir = decodeDirectionBit(0b00000010, byte_1);
+            const wide = decodeWideBit(0b00000001, byte_1);
 
-    const reg = decodeREG(operand, byte_2);
-    const rm = decodeRM(mode, operand, byte_2);
+            const byte_2 = try reader.readByte();
+            const mode = decodeMode(byte_2);
+            assert(mode == Mode.Reg);
 
-    return Instruction{
-        .op = decodeOpcode(byte_1),
-        .src = SrcType{
-            .register = if (dir == Direction.FromRegister) reg else rm,
+            const mask_reg = 0b00111000;
+            const shifted = (byte_2 & mask_reg) >> 3;
+            const reg = lookupRegister(wide, shifted);
+
+            const rm = decodeRM(mode, wide, byte_2);
+
+            return Instruction{
+                .op = op,
+                .src = SrcType{
+                    .register = if (dir == Direction.FromRegister) reg else rm,
+                },
+                .dst = DstType{
+                    .register = if (dir == Direction.ToRegister) reg else rm,
+                },
+            };
         },
-        .dst = DstType{
-            .register = if (dir == Direction.ToRegister) reg else rm,
+        OpCode.mov_imm_to_r => {
+            const wide = decodeWideBit(0b00001000, byte_1);
+
+            const mask_reg = 0b00000111;
+            const reg = lookupRegister(wide, byte_1 & mask_reg);
+
+            switch (wide) {
+                Wide.Byte => {
+                    return Instruction{
+                        .op = op,
+                        .src = SrcType{
+                            .immediate = Immediate{
+                                .byte = try reader.readByte(),
+                            },
+                        },
+                        .dst = DstType{
+                            .register = reg,
+                        },
+                    };
+                },
+                Wide.Word => {
+                    return Instruction{
+                        .op = op,
+                        .src = SrcType{
+                            .immediate = Immediate{
+                                .word = try reader.readInt(u16, native_endian),
+                            },
+                        },
+                        .dst = DstType{
+                            .register = reg,
+                        },
+                    };
+                },
+            }
+            unreachable;
         },
-    };
+        OpCode.Unknown => {
+            return error.UnknownInstruction;
+        },
+    }
+    unreachable;
 }
 
 test "decodeInstruction" {
     const TestCase = struct {
-        in: [2]u8,
+        name: [:0]const u8,
+        in: []const u8,
         expected: Instruction,
     };
     const test_cases = [_]TestCase{
         .{
-            .in = [2]u8{ 0b10001001, 0b11000011 },
+            .name = "mov BX, AX",
+            .in = &[_]u8{ 0b10001001, 0b11000011 },
             .expected = .{
-                .op = OpCode.MOV,
+                .op = OpCode.mov_rm_to_from_rm,
                 .src = SrcType{
                     .register = Register.AX,
                 },
@@ -292,9 +351,10 @@ test "decodeInstruction" {
             },
         },
         .{
-            .in = [2]u8{ 0b10001011, 0b11000011 },
+            .name = "mov AX, BX",
+            .in = &[2]u8{ 0b10001011, 0b11000011 },
             .expected = .{
-                .op = OpCode.MOV,
+                .op = OpCode.mov_rm_to_from_rm,
                 .src = SrcType{
                     .register = Register.BX,
                 },
@@ -304,9 +364,10 @@ test "decodeInstruction" {
             },
         },
         .{
-            .in = [2]u8{ 0b10001000, 0b11000011 },
+            .name = "mov BL, AL",
+            .in = &[2]u8{ 0b10001000, 0b11000011 },
             .expected = .{
-                .op = OpCode.MOV,
+                .op = OpCode.mov_rm_to_from_rm,
                 .src = SrcType{
                     .register = Register.AL,
                 },
@@ -315,10 +376,62 @@ test "decodeInstruction" {
                 },
             },
         },
+        .{
+            .name = "mov CL, 42",
+            .in = &[2]u8{ 0b10110001, 42 },
+            .expected = .{
+                .op = OpCode.mov_imm_to_r,
+                .src = SrcType{
+                    .immediate = Immediate{
+                        .byte = 42,
+                    },
+                },
+                .dst = DstType{
+                    .register = Register.CL,
+                },
+            },
+        },
+        .{
+            .name = "mov CL, -42",
+            .in = &[2]u8{ 0b10110001, 0b11010110 },
+            .expected = .{
+                .op = OpCode.mov_imm_to_r,
+                .src = SrcType{
+                    .immediate = Immediate{
+                        .byte = 256 - 42,
+                    },
+                },
+                .dst = DstType{
+                    .register = Register.CL,
+                },
+            },
+        },
+        .{
+            .name = "mov BX, 256",
+            .in = &[_]u8{ 0b10111011, 0x0, 0x0001 },
+            .expected = .{
+                .op = OpCode.mov_imm_to_r,
+                .src = SrcType{
+                    .immediate = Immediate{
+                        .word = 256,
+                    },
+                },
+                .dst = DstType{
+                    .register = Register.BX,
+                },
+            },
+        },
     };
+    std.debug.print("\n", .{});
     for (test_cases) |case| {
-        const actual = decodeInstruction(case.in[0], case.in[1]);
-        try std.testing.expectEqual(case.expected, actual);
+        var stream = std.io.fixedBufferStream(case.in[0..]);
+        var reader = stream.reader().any();
+        const actual = decodeInstruction(&reader);
+
+        std.testing.expectEqual(case.expected, actual) catch |err| {
+            std.debug.print("Test failure: {s}\n", .{case.name});
+            return err;
+        };
     }
 }
 
@@ -327,20 +440,16 @@ pub fn decode(alloc: std.mem.Allocator, bin: []const u8) ![]const u8 {
     defer result.deinit();
 
     var stream = std.io.fixedBufferStream(bin);
-    var reader = stream.reader();
+    var reader = stream.reader().any();
     try result.appendSlice("bits 16\n");
 
     var lineBuffer: [1024]u8 = undefined;
     while (true) {
-        const byte_1 = reader.readByte() catch |err| switch (err) {
+        const instruction = decodeInstruction(&reader) catch |err| switch (err) {
             error.EndOfStream => break,
-            else => |e| return e,
+            else => return err,
         };
 
-        // If we have a first byte, there has to be a second byte
-        const byte_2 = try reader.readByte();
-
-        const instruction = decodeInstruction(byte_1, byte_2);
         const instruction_string = try std.fmt.bufPrint(&lineBuffer, "{}\n", .{instruction});
         try result.appendSlice(std.ascii.lowerString(instruction_string, instruction_string));
     }

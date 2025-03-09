@@ -165,3 +165,7 @@ test "Homework Part 1 - Listing 37" {
 test "Homework Part 1 - Listing 38" {
     try testDecodeEncode("listing_0038_many_register_mov");
 }
+
+// test "Homework Part 1 - Listing 39" {
+//     try testDecodeEncode("listing_0039_more_movs");
+// }
