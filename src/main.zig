@@ -34,9 +34,22 @@ test "individual instructions" {
     try testEncodeDecode("mov [bx + di], cx");
     try testEncodeDecode("mov [bp + si], cl");
     try testEncodeDecode("mov [bp], ch");
+
+    // Signed displacements
+    // try testEncodeDecode("mov ax, [bx + di - 37]");
+    // try testEncodeDecode("mov [si - 300], cx");
+    // try testEncodeDecode("mov dx, [bx - 32]");
+
+    // Explicit sizes
+    // try testEncodeDecode("mov [bp + di], byte 7");
+    // try testEncodeDecode("mov [di + 901], word 347");
+
+    // Direct address
+    try testEncodeDecode("mov bp, [5]");
+    try testEncodeDecode("mov bx, [3458]");
 }
 
-test "Homework Part 1 - Listing 37" {
+test "Homework" {
     try testDecodeEncodeListing("listing_0037_single_register_mov");
 }
 
@@ -46,6 +59,10 @@ test "Homework Part 1 - Listing 38" {
 
 test "Homework Part 1 - Listing 39" {
     try testDecodeEncodeListing("listing_0039_more_movs");
+}
+
+test "Homework Part 1 - Listing 40" {
+    try testDecodeEncodeListing("listing_0040_challenge_movs");
 }
 
 // 1. Read given bin from data folder

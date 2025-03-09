@@ -181,11 +181,12 @@ const EffectiveAddressCalculation = enum {
     BP_PLUS_DI,
     SI,
     DI,
-    BP, // DIRECT_ADDRESS in Mode.Mem
+    BP,
+    DIRECT_ADDRESS,
     BX,
 };
 
-fn lookupEffectiveAddressCalcuation(raw: u8) EffectiveAddressCalculation {
+fn lookupEffectiveAddressCalcuation(mode: Mode, raw: u8) EffectiveAddressCalculation {
     assert(raw <= 0b111);
 
     // Table 4-9: https://edge.edx.org/c4x/BITSPilani/EEE231/asset/8086_family_Users_Manual_1_.pdf
@@ -195,7 +196,12 @@ fn lookupEffectiveAddressCalcuation(raw: u8) EffectiveAddressCalculation {
     if (raw == 0b011) return EffectiveAddressCalculation.BP_PLUS_DI;
     if (raw == 0b100) return EffectiveAddressCalculation.SI;
     if (raw == 0b101) return EffectiveAddressCalculation.DI;
-    if (raw == 0b110) return EffectiveAddressCalculation.BP;
+    if (raw == 0b110) {
+        if (mode == Mode.Mem) {
+            return EffectiveAddressCalculation.DIRECT_ADDRESS;
+        }
+        return EffectiveAddressCalculation.BP;
+    }
     if (raw == 0b111) return EffectiveAddressCalculation.BX;
     unreachable;
 }
@@ -214,7 +220,7 @@ fn decodeDisplacement(mode: Mode, calc: EffectiveAddressCalculation, reader: *st
     switch (mode) {
         Mode.Reg => return null,
         Mode.Mem => {
-            if (calc != EffectiveAddressCalculation.BP) {
+            if (calc != EffectiveAddressCalculation.DIRECT_ADDRESS) {
                 return null;
             }
             const val = try reader.readInt(u16, native_endian);
@@ -315,6 +321,7 @@ const Memory = struct {
             EffectiveAddressCalculation.SI => "si",
             EffectiveAddressCalculation.DI => "di",
             EffectiveAddressCalculation.BP => "bp",
+            EffectiveAddressCalculation.DIRECT_ADDRESS => "",
             EffectiveAddressCalculation.BX => "bx",
         };
 
@@ -323,20 +330,28 @@ const Memory = struct {
                 .byte => |b| {
                     if (b == 0) {
                         try writer.print("[{s}]", .{str});
+                        return;
                     } else {
                         try writer.print("[{s} + {d}]", .{ str, b });
+                        return;
                     }
                 },
                 .word => |w| {
-                    if (w == 0) {
+                    if (mem.calc == EffectiveAddressCalculation.DIRECT_ADDRESS) {
+                        try writer.print("[{d}]", .{w});
+                        return;
+                    } else if (w == 0) {
                         try writer.print("[{s}]", .{str});
+                        return;
                     } else {
                         try writer.print("[{s} + {d}]", .{ str, w });
+                        return;
                     }
                 },
             }
         } else {
             try writer.print("[{s}]", .{str});
+            return;
         }
     }
 };
@@ -360,7 +375,7 @@ fn decodeRM(mode: Mode, wide: Wide, byte: u8, reader: *std.io.AnyReader) !RegMem
             };
         },
         else => {
-            const calc = lookupEffectiveAddressCalcuation(byte);
+            const calc = lookupEffectiveAddressCalcuation(mode, byte);
             const displacement = try decodeDisplacement(mode, calc, reader);
             return RegMemField{
                 .memory = Memory{

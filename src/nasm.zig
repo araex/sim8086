@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const nasm_exe = "nasm";
-// Too much of a pain to deal with cwd & running tests from within vscode. Hardcoding the path is good enough for now.
+// Too much of a pain to deal with cwd & running tests within vscode. Hardcoding the path is good enough for now.
 const out_dir = "C:\\dev\\computer_enhance\\zig-out\\nasm";
 
 pub fn assemble(alloc: std.mem.Allocator, buf: []const u8, file_name: []const u8) ![]u8 {
