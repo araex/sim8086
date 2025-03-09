@@ -119,14 +119,71 @@ fn debugOut() PrettyDebugPrinter {
     return state.printer;
 }
 
-fn runNasm(alloc: std.mem.Allocator, got_asm: []const u8, file_name: []const u8) ![]u8 {
+fn runNasm(alloc: std.mem.Allocator, asm_content: []const u8, file_name: []const u8) ![]u8 {
     debugOut().print("Assemble decoded asm...\n", .{});
     try debugOut().cfg.setColor(std.io.getStdErr(), .bright_black);
     defer debugOut().cfg.setColor(std.io.getStdErr(), .reset) catch {};
-    return try nasm.assemble(alloc, got_asm, file_name);
+    return try nasm.assemble(alloc, asm_content, file_name);
 }
 
-fn testDecodeEncode(comptime listing_file_name: []const u8) !void {
+fn testEncodeDecode(comptime asm_instruction: [:0]const u8) !void {
+    debugOut().print("\nEncode->Decode:", .{});
+    debugOut()
+        .withColor(.bright_blue)
+        .print("'{s}'...\n", .{asm_instruction});
+
+    const hash = comptime std.hash.CityHash64.hash(asm_instruction);
+    const file_name = std.fmt.comptimePrint("{d}", .{hash});
+
+    const prefix = "bits 16\n";
+    const postfix = "\n";
+    const want_asm = std.fmt.comptimePrint("{s}{s}{s}", .{ prefix, asm_instruction, postfix });
+
+    const alloc = std.testing.allocator;
+    const got_bin = try runNasm(alloc, want_asm, file_name);
+    defer alloc.free(got_bin);
+
+    const got_asm = try x8086.decode(alloc, got_bin);
+    defer alloc.free(got_asm);
+    try std.testing.expectEqualSlices(u8, want_asm, got_asm);
+    debugOut()
+        .withColor(.bright_green)
+        .print("Success!\n", .{});
+}
+
+test "individual instructions" {
+    // Register-to-register
+    try testEncodeDecode("mov si, bx");
+    try testEncodeDecode("mov dh, al");
+
+    // 8-bit immediate-to-register
+    try testEncodeDecode("mov cl, 12");
+    try testEncodeDecode("mov ch, 244"); // 256 - 12
+
+    // 16-bit immediate-to-register
+    try testEncodeDecode("mov cx, 12");
+    try testEncodeDecode("mov cx, 244"); // 256 - 12
+    try testEncodeDecode("mov dx, 3948");
+    try testEncodeDecode("mov dx, 61588"); // 65536 - 3948
+
+    // Source address calculation
+    try testEncodeDecode("mov al, [bx + si]");
+    try testEncodeDecode("mov bx, [bp + di]");
+    try testEncodeDecode("mov dx, [bp]");
+
+    // Source address calculation plus 8-bit displacement
+    try testEncodeDecode("mov ah, [bx + si + 4]");
+
+    // Source address calculation plus 16-bit displacement
+    try testEncodeDecode("mov al, [bx + si + 4999]");
+
+    // Dest address calculation
+    try testEncodeDecode("mov [bx + di], cx");
+    try testEncodeDecode("mov [bp + si], cl");
+    try testEncodeDecode("mov [bp], ch");
+}
+
+fn testHomework(comptime listing_file_name: []const u8) !void {
     const data_dir = "data";
     const in_asm_path = std.fmt.comptimePrint("{s}/{s}.asm", .{ data_dir, listing_file_name });
     const in_bin_path = std.fmt.comptimePrint("{s}/{s}", .{ data_dir, listing_file_name });
@@ -144,14 +201,17 @@ fn testDecodeEncode(comptime listing_file_name: []const u8) !void {
     const got_asm = try x8086.decode(alloc, want_bin[0..]);
     defer alloc.free(got_asm);
 
-    debugOut().print("Compare decoded asm to '{s}'...\n", .{in_asm_path});
-    try std.testing.expectEqualSlices(u8, want_asm, got_asm);
-
     const got_bin = try runNasm(alloc, got_asm, listing_file_name);
     defer alloc.free(got_bin);
 
     debugOut().print("Compare assembled binary to ground truth...\n", .{});
-    try std.testing.expectEqualSlices(u8, want_bin, got_bin);
+    std.testing.expectEqualSlices(u8, want_bin, got_bin) catch |e| {
+        debugOut()
+            .withColor(.red)
+            .print("- Compiled binary differs from ground truth. Diffing decoded ASM...\n", .{});
+        std.testing.expectEqualSlices(u8, want_asm, got_asm) catch {};
+        return e;
+    };
 
     debugOut()
         .withColor(.bright_green)
@@ -159,13 +219,13 @@ fn testDecodeEncode(comptime listing_file_name: []const u8) !void {
 }
 
 test "Homework Part 1 - Listing 37" {
-    try testDecodeEncode("listing_0037_single_register_mov");
+    try testHomework("listing_0037_single_register_mov");
 }
 
 test "Homework Part 1 - Listing 38" {
-    try testDecodeEncode("listing_0038_many_register_mov");
+    try testHomework("listing_0038_many_register_mov");
 }
 
-// test "Homework Part 1 - Listing 39" {
-//     try testDecodeEncode("listing_0039_more_movs");
-// }
+test "Homework Part 1 - Listing 39" {
+    try testHomework("listing_0039_more_movs");
+}

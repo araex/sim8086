@@ -138,14 +138,6 @@ fn lookupRegister(wide: Wide, byte: u8) Register {
     unreachable;
 }
 
-fn decodeRM(mode: Mode, wide: Wide, byte: u8) Register {
-    // Table 4-10: https://edge.edx.org/c4x/BITSPilani/EEE231/asset/8086_family_Users_Manual_1_.pdf
-    assert(mode == Mode.Reg);
-    const mask_reg = 0b00000111;
-    const masked = byte & mask_reg;
-    return lookupRegister(wide, masked);
-}
-
 test "lookupRegister" {
     const TestCase = struct {
         in: u8,
@@ -182,6 +174,205 @@ test "lookupRegister" {
     }
 }
 
+const EffectiveAddressCalculation = enum {
+    BX_PLUS_SI,
+    BX_PLUS_DI,
+    BP_PLUS_SI,
+    BP_PLUS_DI,
+    SI,
+    DI,
+    BP, // DIRECT_ADDRESS in Mode.Mem
+    BX,
+};
+
+fn lookupEffectiveAddressCalcuation(raw: u8) EffectiveAddressCalculation {
+    assert(raw <= 0b111);
+
+    // Table 4-9: https://edge.edx.org/c4x/BITSPilani/EEE231/asset/8086_family_Users_Manual_1_.pdf
+    if (raw == 0b000) return EffectiveAddressCalculation.BX_PLUS_SI;
+    if (raw == 0b001) return EffectiveAddressCalculation.BX_PLUS_DI;
+    if (raw == 0b010) return EffectiveAddressCalculation.BP_PLUS_SI;
+    if (raw == 0b011) return EffectiveAddressCalculation.BP_PLUS_DI;
+    if (raw == 0b100) return EffectiveAddressCalculation.SI;
+    if (raw == 0b101) return EffectiveAddressCalculation.DI;
+    if (raw == 0b110) return EffectiveAddressCalculation.BP;
+    if (raw == 0b111) return EffectiveAddressCalculation.BX;
+    unreachable;
+}
+
+const DisplacementTagType = enum {
+    byte,
+    word,
+};
+
+const Displacement = union(DisplacementTagType) {
+    byte: u8,
+    word: u16,
+};
+
+fn decodeDisplacement(mode: Mode, calc: EffectiveAddressCalculation, reader: *std.io.AnyReader) !?Displacement {
+    switch (mode) {
+        Mode.Reg => return null,
+        Mode.Mem => {
+            if (calc != EffectiveAddressCalculation.BP) {
+                return null;
+            }
+            const val = try reader.readInt(u16, native_endian);
+            return Displacement{
+                .word = val,
+            };
+        },
+        Mode.Mem8BitDisplacement => {
+            const val = try reader.readByte();
+            return Displacement{
+                .byte = val,
+            };
+        },
+        Mode.Mem16BitDisplacement => {
+            const val = try reader.readInt(u16, native_endian);
+            return Displacement{
+                .word = val,
+            };
+        },
+    }
+    unreachable;
+}
+
+test "decodeDisplacement" {
+    const TestCase = struct {
+        name: [:0]const u8,
+        mode: Mode,
+        calc: EffectiveAddressCalculation,
+        disp_buf: []const u8,
+        expected: ?Displacement,
+    };
+    const test_cases = [_]TestCase{
+        .{
+            .name = "Mode.Reg has no displacment",
+            .mode = Mode.Reg,
+            .calc = EffectiveAddressCalculation.BP, // doesn't matter
+            .disp_buf = &[_]u8{},
+            .expected = null,
+        },
+        .{
+            .name = "Mode.Mem decode DIRECT ADDRESS",
+            .mode = Mode.Mem,
+            .calc = EffectiveAddressCalculation.BP,
+            .disp_buf = &[_]u8{ 0x0, 0x1 },
+            .expected = Displacement{
+                .word = 256,
+            },
+        },
+        .{
+            .name = "Mode.Mem8BitDisplacement decode 8 bits",
+            .mode = Mode.Mem8BitDisplacement,
+            .calc = EffectiveAddressCalculation.BP, // doesn't matter
+            .disp_buf = &[_]u8{42},
+            .expected = Displacement{
+                .byte = 42,
+            },
+        },
+        .{
+            .name = "Mode.Mem16BitDisplacement decode 16 bits",
+            .mode = Mode.Mem16BitDisplacement,
+            .calc = EffectiveAddressCalculation.BP, // doesn't matter
+            .disp_buf = &[_]u8{ 0x0, 0x1 },
+            .expected = Displacement{
+                .word = 256,
+            },
+        },
+    };
+
+    for (test_cases) |case| {
+        var stream = std.io.fixedBufferStream(case.disp_buf);
+        var reader = stream.reader().any();
+        const actual = decodeDisplacement(case.mode, case.calc, &reader) catch |actual_error| {
+            std.debug.print("Unexpected error: {}", .{actual_error});
+            return error.TestUnexpectedResult;
+        };
+        std.testing.expectEqual(case.expected, actual) catch |err| {
+            std.debug.print("Test failure: {s}\n", .{case.name});
+            return err;
+        };
+    }
+}
+
+const Memory = struct {
+    calc: EffectiveAddressCalculation,
+    displacement: ?Displacement,
+
+    pub fn format(
+        mem: Memory,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        const str = switch (mem.calc) {
+            EffectiveAddressCalculation.BX_PLUS_SI => "bx + si",
+            EffectiveAddressCalculation.BX_PLUS_DI => "bx + di",
+            EffectiveAddressCalculation.BP_PLUS_SI => "bp + si",
+            EffectiveAddressCalculation.BP_PLUS_DI => "bp + di",
+            EffectiveAddressCalculation.SI => "si",
+            EffectiveAddressCalculation.DI => "di",
+            EffectiveAddressCalculation.BP => "bp",
+            EffectiveAddressCalculation.BX => "bx",
+        };
+
+        if (mem.displacement) |d| {
+            switch (d) {
+                .byte => |b| {
+                    if (b == 0) {
+                        try writer.print("[{s}]", .{str});
+                    } else {
+                        try writer.print("[{s} + {d}]", .{ str, b });
+                    }
+                },
+                .word => |w| {
+                    if (w == 0) {
+                        try writer.print("[{s}]", .{str});
+                    } else {
+                        try writer.print("[{s} + {d}]", .{ str, w });
+                    }
+                },
+            }
+        } else {
+            try writer.print("[{s}]", .{str});
+        }
+    }
+};
+
+const RegMemFieldTag = enum {
+    register,
+    memory,
+};
+
+const RegMemField = union(RegMemFieldTag) {
+    register: Register,
+    memory: Memory,
+};
+
+fn decodeRM(mode: Mode, wide: Wide, byte: u8, reader: *std.io.AnyReader) !RegMemField {
+    // Table 4-10: https://edge.edx.org/c4x/BITSPilani/EEE231/asset/8086_family_Users_Manual_1_.pdf
+    switch (mode) {
+        Mode.Reg => {
+            return RegMemField{
+                .register = lookupRegister(wide, byte),
+            };
+        },
+        else => {
+            const calc = lookupEffectiveAddressCalcuation(byte);
+            const displacement = try decodeDisplacement(mode, calc, reader);
+            return RegMemField{
+                .memory = Memory{
+                    .calc = calc,
+                    .displacement = displacement,
+                },
+            };
+        },
+    }
+    unreachable;
+}
+
 const ImmediateTypeTag = enum {
     byte,
     word,
@@ -195,15 +386,18 @@ const Immediate = union(ImmediateTypeTag) {
 const SrcTypeTag = enum {
     register,
     immediate,
+    memory,
 };
 
 const DstTypeTag = enum {
     register,
+    memory,
 };
 
 const SrcType = union(SrcTypeTag) {
     register: Register,
     immediate: Immediate,
+    memory: Memory,
 
     pub fn format(
         src_type: SrcType,
@@ -217,6 +411,7 @@ const SrcType = union(SrcTypeTag) {
                 .byte => |b| return writer.print("{d}", .{b}),
                 .word => |w| return writer.print("{d}", .{w}),
             },
+            .memory => |mem| return writer.print("{}", .{mem}),
         }
         unreachable;
     }
@@ -224,6 +419,7 @@ const SrcType = union(SrcTypeTag) {
 
 const DstType = union(DstTypeTag) {
     register: Register,
+    memory: Memory,
 
     pub fn format(
         dst_type: DstType,
@@ -233,6 +429,7 @@ const DstType = union(DstTypeTag) {
     ) !void {
         switch (dst_type) {
             .register => |reg| return writer.print("{s}", .{std.enums.tagName(Register, reg).?}),
+            .memory => |mem| return writer.print("{}", .{mem}),
         }
         unreachable;
     }
@@ -269,13 +466,47 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
 
             const byte_2 = try reader.readByte();
             const mode = decodeMode(byte_2);
-            assert(mode == Mode.Reg);
 
             const mask_reg = 0b00111000;
             const shifted = (byte_2 & mask_reg) >> 3;
             const reg = lookupRegister(wide, shifted);
 
-            const rm = decodeRM(mode, wide, byte_2);
+            const rm = try decodeRM(mode, wide, byte_2 & 0b00000111, reader);
+            switch (rm) {
+                .register => |r| {
+                    return Instruction{
+                        .op = op,
+                        .src = SrcType{
+                            .register = if (dir == Direction.FromRegister) reg else r,
+                        },
+                        .dst = DstType{
+                            .register = if (dir == Direction.ToRegister) reg else r,
+                        },
+                    };
+                },
+                .memory => |mem| {
+                    switch (dir) {
+                        Direction.FromRegister => return Instruction{
+                            .op = op,
+                            .src = SrcType{
+                                .register = reg,
+                            },
+                            .dst = DstType{
+                                .memory = mem,
+                            },
+                        },
+                        Direction.ToRegister => return Instruction{
+                            .op = op,
+                            .src = SrcType{
+                                .memory = mem,
+                            },
+                            .dst = DstType{
+                                .register = reg,
+                            },
+                        },
+                    }
+                },
+            }
 
             return Instruction{
                 .op = op,
@@ -321,7 +552,6 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
                     };
                 },
             }
-            unreachable;
         },
         OpCode.Unknown => {
             return error.UnknownInstruction;
