@@ -5,6 +5,7 @@ const native_endian = @import("builtin").target.cpu.arch.endian();
 pub const OpCode = enum {
     Unknown,
     mov_rm_to_from_rm,
+    mov_imm_to_rm,
     mov_imm_to_r,
 };
 
@@ -12,11 +13,14 @@ pub fn decodeOpcode(byte: u8) OpCode {
     // Table 4-12: https://edge.edx.org/c4x/BITSPilani/EEE231/asset/8086_family_Users_Manual_1_.pdf
     const mask_4 = 0b11110000;
     const mask_6 = 0b11111100;
+    const mask_7 = 0b11111110;
 
     if (byte & mask_4 == 0b10110000) {
         return OpCode.mov_imm_to_r;
     } else if (byte & mask_6 == 0b10001000) {
         return OpCode.mov_rm_to_from_rm;
+    } else if (byte & mask_7 == 0b11000110) {
+        return OpCode.mov_imm_to_rm;
     } else {
         @branchHint(.cold);
         return OpCode.Unknown;
@@ -36,6 +40,8 @@ test "decodeOpcode" {
         .{ .in = 0b10001011, .expected = .mov_rm_to_from_rm },
         .{ .in = 0b10110000, .expected = .mov_imm_to_r },
         .{ .in = 0b10111011, .expected = .mov_imm_to_r },
+        .{ .in = 0b11000110, .expected = .mov_imm_to_rm },
+        .{ .in = 0b11000111, .expected = .mov_imm_to_rm },
     };
 
     for (test_cases) |case| {
@@ -388,14 +394,43 @@ fn decodeRM(mode: Mode, wide: Wide, byte: u8, reader: *std.io.AnyReader) !RegMem
     unreachable;
 }
 
-const ImmediateTypeTag = enum {
+const ImmediateValueTag = enum {
     byte,
     word,
 };
 
-const Immediate = union(ImmediateTypeTag) {
+const ImmediateValue = union(ImmediateValueTag) {
     byte: u8,
     word: u16,
+};
+
+const ImmediateField = struct {
+    value: ImmediateValue,
+    explicit_size: bool,
+
+    pub fn format(
+        field: ImmediateField,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        switch (field.value) {
+            .byte => |b| {
+                if (field.explicit_size) {
+                    try writer.print("byte {d}", .{b});
+                } else {
+                    try writer.print("{d}", .{b});
+                }
+            },
+            .word => |w| {
+                if (field.explicit_size) {
+                    try writer.print("word {d}", .{w});
+                } else {
+                    try writer.print("{d}", .{w});
+                }
+            },
+        }
+    }
 };
 
 const SrcTypeTag = enum {
@@ -411,7 +446,7 @@ const DstTypeTag = enum {
 
 const SrcType = union(SrcTypeTag) {
     register: Register,
-    immediate: Immediate,
+    immediate: ImmediateField,
     memory: Memory,
 
     pub fn format(
@@ -421,14 +456,10 @@ const SrcType = union(SrcTypeTag) {
         writer: anytype,
     ) !void {
         switch (src_type) {
-            .register => |reg| return writer.print("{s}", .{std.enums.tagName(Register, reg).?}),
-            .immediate => |i| switch (i) {
-                .byte => |b| return writer.print("{d}", .{b}),
-                .word => |w| return writer.print("{d}", .{w}),
-            },
-            .memory => |mem| return writer.print("{}", .{mem}),
+            .register => |reg| try writer.print("{s}", .{std.enums.tagName(Register, reg).?}),
+            .immediate => |i| try writer.print("{}", .{i}),
+            .memory => |mem| try writer.print("{}", .{mem}),
         }
-        unreachable;
     }
 };
 
@@ -464,6 +495,7 @@ const Instruction = struct {
         const op = switch (instruction.op) {
             OpCode.mov_rm_to_from_rm => "mov",
             OpCode.mov_imm_to_r => "mov",
+            OpCode.mov_imm_to_rm => "mov",
             OpCode.Unknown => "<unknown>",
         };
         return writer.print("{s} {}, {}", .{ op, instruction.dst, instruction.src });
@@ -544,8 +576,11 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
                     return Instruction{
                         .op = op,
                         .src = SrcType{
-                            .immediate = Immediate{
-                                .byte = try reader.readByte(),
+                            .immediate = ImmediateField{
+                                .value = ImmediateValue{
+                                    .byte = try reader.readByte(),
+                                },
+                                .explicit_size = false,
                             },
                         },
                         .dst = DstType{
@@ -557,8 +592,11 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
                     return Instruction{
                         .op = op,
                         .src = SrcType{
-                            .immediate = Immediate{
-                                .word = try reader.readInt(u16, native_endian),
+                            .immediate = ImmediateField{
+                                .value = ImmediateValue{
+                                    .word = try reader.readInt(u16, native_endian),
+                                },
+                                .explicit_size = false,
                             },
                         },
                         .dst = DstType{
@@ -567,6 +605,59 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
                     };
                 },
             }
+        },
+        OpCode.mov_imm_to_rm => {
+            const wide = decodeWideBit(0b00000001, byte_1);
+            const byte_2 = try reader.readByte();
+            const mode = decodeMode(byte_2);
+            assert(mode != Mode.Reg);
+            const rm = try decodeRM(mode, wide, byte_2 & 0b00000111, reader);
+            if (mode == Mode.Mem8BitDisplacement) {
+                // DISP is always 16bit before data begins
+                _ = try reader.readByte();
+            }
+
+            var dst: DstType = undefined;
+            switch (rm) {
+                .register => |r| {
+                    dst = DstType{
+                        .register = r,
+                    };
+                },
+                .memory => |m| {
+                    dst = DstType{
+                        .memory = m,
+                    };
+                },
+            }
+            var src: SrcType = undefined;
+            switch (wide) {
+                Wide.Byte => {
+                    src = SrcType{
+                        .immediate = ImmediateField{
+                            .value = ImmediateValue{
+                                .byte = try reader.readByte(),
+                            },
+                            .explicit_size = true,
+                        },
+                    };
+                },
+                Wide.Word => {
+                    src = SrcType{
+                        .immediate = ImmediateField{
+                            .value = ImmediateValue{
+                                .word = try reader.readInt(u16, native_endian),
+                            },
+                            .explicit_size = true,
+                        },
+                    };
+                },
+            }
+            return Instruction{
+                .op = op,
+                .src = src,
+                .dst = dst,
+            };
         },
         OpCode.Unknown => {
             return error.UnknownInstruction;
@@ -627,8 +718,11 @@ test "decodeInstruction" {
             .expected = .{
                 .op = OpCode.mov_imm_to_r,
                 .src = SrcType{
-                    .immediate = Immediate{
-                        .byte = 42,
+                    .immediate = ImmediateField{
+                        .value = ImmediateValue{
+                            .byte = 42,
+                        },
+                        .explicit_size = false,
                     },
                 },
                 .dst = DstType{
@@ -642,8 +736,11 @@ test "decodeInstruction" {
             .expected = .{
                 .op = OpCode.mov_imm_to_r,
                 .src = SrcType{
-                    .immediate = Immediate{
-                        .byte = 256 - 42,
+                    .immediate = ImmediateField{
+                        .value = ImmediateValue{
+                            .byte = 256 - 42,
+                        },
+                        .explicit_size = false,
                     },
                 },
                 .dst = DstType{
@@ -657,12 +754,38 @@ test "decodeInstruction" {
             .expected = .{
                 .op = OpCode.mov_imm_to_r,
                 .src = SrcType{
-                    .immediate = Immediate{
-                        .word = 256,
+                    .immediate = ImmediateField{
+                        .value = ImmediateValue{
+                            .word = 256,
+                        },
+                        .explicit_size = false,
                     },
                 },
                 .dst = DstType{
                     .register = Register.BX,
+                },
+            },
+        },
+        .{
+            .name = "mov [di + 256], word 515",
+            .in = &[_]u8{ 0b11000111, 0b10000101, 0x0, 0x1, 0x3, 0x2 },
+            .expected = .{
+                .op = OpCode.mov_imm_to_rm,
+                .src = SrcType{
+                    .immediate = ImmediateField{
+                        .value = ImmediateValue{
+                            .word = 515,
+                        },
+                        .explicit_size = true,
+                    },
+                },
+                .dst = DstType{
+                    .memory = Memory{
+                        .calc = EffectiveAddressCalculation.DI,
+                        .displacement = Displacement{
+                            .word = 256,
+                        },
+                    },
                 },
             },
         },
@@ -672,6 +795,7 @@ test "decodeInstruction" {
         var stream = std.io.fixedBufferStream(case.in[0..]);
         var reader = stream.reader().any();
         const actual = decodeInstruction(&reader);
+        try std.testing.expectEqual(case.expected, actual);
 
         std.testing.expectEqual(case.expected, actual) catch |err| {
             std.debug.print("Test failure: {s}\n", .{case.name});

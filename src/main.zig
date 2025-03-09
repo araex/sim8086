@@ -41,8 +41,8 @@ test "individual instructions" {
     // try testEncodeDecode("mov dx, [bx - 32]");
 
     // Explicit sizes
-    // try testEncodeDecode("mov [bp + di], byte 7");
-    // try testEncodeDecode("mov [di + 901], word 347");
+    try testEncodeDecode("mov [bp + di], byte 7");
+    try testEncodeDecode("mov [di + 901], word 347");
 
     // Direct address
     try testEncodeDecode("mov bp, [5]");
