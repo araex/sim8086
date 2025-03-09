@@ -7,6 +7,8 @@ pub const OpCode = enum {
     mov_rm_to_from_rm,
     mov_imm_to_rm,
     mov_imm_to_r,
+    mov_mem_to_accumulator,
+    mov_accumulator_to_mem,
 };
 
 pub fn decodeOpcode(byte: u8) OpCode {
@@ -21,6 +23,10 @@ pub fn decodeOpcode(byte: u8) OpCode {
         return OpCode.mov_rm_to_from_rm;
     } else if (byte & mask_7 == 0b11000110) {
         return OpCode.mov_imm_to_rm;
+    } else if (byte & mask_7 == 0b10100000) {
+        return OpCode.mov_mem_to_accumulator;
+    } else if (byte & mask_7 == 0b10100010) {
+        return OpCode.mov_accumulator_to_mem;
     } else {
         @branchHint(.cold);
         return OpCode.Unknown;
@@ -42,6 +48,10 @@ test "decodeOpcode" {
         .{ .in = 0b10111011, .expected = .mov_imm_to_r },
         .{ .in = 0b11000110, .expected = .mov_imm_to_rm },
         .{ .in = 0b11000111, .expected = .mov_imm_to_rm },
+        .{ .in = 0b10100000, .expected = .mov_mem_to_accumulator },
+        .{ .in = 0b10100001, .expected = .mov_mem_to_accumulator },
+        .{ .in = 0b10100010, .expected = .mov_accumulator_to_mem },
+        .{ .in = 0b10100011, .expected = .mov_accumulator_to_mem },
     };
 
     for (test_cases) |case| {
@@ -269,7 +279,7 @@ test "decodeDisplacement" {
         .{
             .name = "Mode.Mem decode DIRECT ADDRESS",
             .mode = Mode.Mem,
-            .calc = EffectiveAddressCalculation.BP,
+            .calc = EffectiveAddressCalculation.DIRECT_ADDRESS,
             .disp_buf = &[_]u8{ 0x0, 0x1 },
             .expected = Displacement{
                 .word = 256,
@@ -337,6 +347,14 @@ const Memory = struct {
                     if (b == 0) {
                         try writer.print("[{s}]", .{str});
                         return;
+                    } else if (b > 127) {
+                        // Displacements in ASM are written as signed and used to decide
+                        // if 16-bit displacment is needed. So despite it being ambiguous
+                        // what the original ASM was, we opt for the version that will
+                        // produce smaller binaries if assembled again.
+                        const signed: i8 = @bitCast(b);
+                        try writer.print("[{s} - {d}]", .{ str, @abs(signed) });
+                        return;
                     } else {
                         try writer.print("[{s} + {d}]", .{ str, b });
                         return;
@@ -349,6 +367,9 @@ const Memory = struct {
                     } else if (w == 0) {
                         try writer.print("[{s}]", .{str});
                         return;
+                    } else if (w > 32768) {
+                        const signed: i16 = @bitCast(w);
+                        try writer.print("[{s} - {d}]", .{ str, @abs(signed) });
                     } else {
                         try writer.print("[{s} + {d}]", .{ str, w });
                         return;
@@ -496,6 +517,8 @@ const Instruction = struct {
             OpCode.mov_rm_to_from_rm => "mov",
             OpCode.mov_imm_to_r => "mov",
             OpCode.mov_imm_to_rm => "mov",
+            OpCode.mov_accumulator_to_mem => "mov",
+            OpCode.mov_mem_to_accumulator => "mov",
             OpCode.Unknown => "<unknown>",
         };
         return writer.print("{s} {}, {}", .{ op, instruction.dst, instruction.src });
@@ -653,6 +676,64 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
                     };
                 },
             }
+            return Instruction{
+                .op = op,
+                .src = src,
+                .dst = dst,
+            };
+        },
+        OpCode.mov_accumulator_to_mem => {
+            const wide = decodeWideBit(0b00000001, byte_1);
+            const src = SrcType{
+                .register = if (wide == Wide.Byte) .AL else .AX,
+            };
+            var displacement: Displacement = undefined;
+            if (wide == Wide.Byte) {
+                displacement = Displacement{
+                    .byte = try reader.readByte(),
+                };
+                // Fixed length instruction, need to skip a byte
+                _ = try reader.readByte();
+            } else {
+                displacement = Displacement{
+                    .word = try reader.readInt(u16, native_endian),
+                };
+            }
+            const dst = DstType{
+                .memory = Memory{
+                    .calc = EffectiveAddressCalculation.DIRECT_ADDRESS,
+                    .displacement = displacement,
+                },
+            };
+            return Instruction{
+                .op = op,
+                .src = src,
+                .dst = dst,
+            };
+        },
+        OpCode.mov_mem_to_accumulator => {
+            const wide = decodeWideBit(0b00000001, byte_1);
+            const dst = DstType{
+                .register = if (wide == Wide.Byte) .AL else .AX,
+            };
+            var displacement: Displacement = undefined;
+            if (wide == Wide.Byte) {
+                displacement = Displacement{
+                    .byte = try reader.readByte(),
+                };
+                // Fixed length instruction, need to skip a byte
+                _ = try reader.readByte();
+            } else {
+                displacement = Displacement{
+                    .word = try reader.readInt(u16, native_endian),
+                };
+            }
+            const src = SrcType{
+                .memory = Memory{
+                    .calc = EffectiveAddressCalculation.DIRECT_ADDRESS,
+                    .displacement = displacement,
+                },
+            };
             return Instruction{
                 .op = op,
                 .src = src,

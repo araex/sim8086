@@ -36,9 +36,9 @@ test "individual instructions" {
     try testEncodeDecode("mov [bp], ch");
 
     // Signed displacements
-    // try testEncodeDecode("mov ax, [bx + di - 37]");
-    // try testEncodeDecode("mov [si - 300], cx");
-    // try testEncodeDecode("mov dx, [bx - 32]");
+    try testEncodeDecode("mov ax, [bx + di - 37]");
+    try testEncodeDecode("mov [si - 300], cx");
+    try testEncodeDecode("mov dx, [bx - 32]");
 
     // Explicit sizes
     try testEncodeDecode("mov [bp + di], byte 7");
@@ -47,6 +47,14 @@ test "individual instructions" {
     // Direct address
     try testEncodeDecode("mov bp, [5]");
     try testEncodeDecode("mov bx, [3458]");
+
+    // Memory-to-accumulator test
+    try testEncodeDecode("mov ax, [2555]");
+    try testEncodeDecode("mov ax, [16]");
+
+    // Accumulator-to-memory test
+    try testEncodeDecode("mov [2554], ax");
+    try testEncodeDecode("mov [15], ax");
 }
 
 test "Homework" {
