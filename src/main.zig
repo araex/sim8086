@@ -3,6 +3,7 @@ const assert = @import("std").debug.assert;
 const nasm = @import("nasm.zig");
 const pretty = @import("log.zig").pretty;
 const x8086 = @import("x8086.zig");
+const format = @import("format.zig");
 
 test "individual instructions" {
     // Register-to-register
@@ -92,10 +93,13 @@ fn testDecodeEncodeListing(comptime listing_file_name: []const u8) !void {
     defer alloc.free(want_asm);
     const want_bin = @embedFile(in_bin_path);
 
-    const got_asm = try x8086.decode(alloc, want_bin[0..]);
-    defer alloc.free(got_asm);
+    const instructions = try x8086.decode(alloc, want_bin[0..]);
+    defer instructions.deinit();
 
-    const got_bin = try runNasm(alloc, got_asm, listing_file_name);
+    const got_asm = try format.toAsm(alloc, instructions.items);
+    defer got_asm.deinit();
+
+    const got_bin = try runNasm(alloc, got_asm.items, listing_file_name);
     defer alloc.free(got_bin);
 
     pretty().print("Compare assembled binary to ground truth...\n", .{});
@@ -103,7 +107,7 @@ fn testDecodeEncodeListing(comptime listing_file_name: []const u8) !void {
         pretty()
             .withColor(.red)
             .print("- Compiled binary differs from ground truth. Diffing decoded ASM...\n", .{});
-        std.testing.expectEqualSlices(u8, want_asm, got_asm) catch {};
+        std.testing.expectEqualSlices(u8, want_asm, got_asm.items) catch {};
         return e;
     };
 
@@ -132,9 +136,13 @@ fn testEncodeDecode(comptime asm_instruction: [:0]const u8) !void {
     const got_bin = try runNasm(alloc, want_asm, file_name);
     defer alloc.free(got_bin);
 
-    const got_asm = try x8086.decode(alloc, got_bin);
-    defer alloc.free(got_asm);
-    try std.testing.expectEqualSlices(u8, want_asm, got_asm);
+    const instructions = try x8086.decode(alloc, got_bin);
+    defer instructions.deinit();
+
+    const got_asm = try format.toAsm(alloc, instructions.items);
+    defer got_asm.deinit();
+
+    try std.testing.expectEqualSlices(u8, want_asm, got_asm.items);
     pretty()
         .withColor(.bright_green)
         .print("Success!\n", .{});
