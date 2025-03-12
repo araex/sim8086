@@ -57,6 +57,10 @@ fn decodeRegister(operates_on: OperatesOn, comptime mask_reg_bits: u8, byte: u8)
     unreachable;
 }
 
+fn isWideRegister(reg: Register) bool {
+    return @intFromEnum(reg) < @intFromEnum(Register.AX);
+}
+
 pub const EffectiveAddressCalculation = enum {
     BX_PLUS_SI,
     BX_PLUS_DI,
@@ -176,10 +180,9 @@ pub const ImmediateValue = union(ImmediateValueTag) {
 
 pub const ImmediateField = struct {
     value: ImmediateValue,
-    explicit_size: bool,
 };
 
-fn makeImmediate(val: anytype, explicit_size: bool) ImmediateField {
+fn makeImmediate(val: anytype) ImmediateField {
     return ImmediateField{
         .value = switch (@TypeOf(val)) {
             u8 => .{ .byte = val },
@@ -187,29 +190,27 @@ fn makeImmediate(val: anytype, explicit_size: bool) ImmediateField {
             ImmediateValue => val,
             else => unreachable,
         },
-        .explicit_size = explicit_size,
     };
 }
 
-fn decodeImmediate(operates_on: OperatesOn, byte: u8, reader: anytype, explicit_size: bool) !ImmediateField {
+fn decodeImmediate(operates_on: OperatesOn, byte: u8, reader: anytype) !ImmediateField {
     switch (operates_on) {
-        OperatesOn.Byte => return makeImmediate(byte, explicit_size),
+        OperatesOn.Byte => return makeImmediate(byte),
         OperatesOn.Word => {
             // We alreadty have the first byte, read the second byte and construct an u16 (native endianness)
             const second_byte = try reader.readByte();
             const value: u16 = @as(u16, byte) | (@as(u16, second_byte) << 8);
-            return makeImmediate(value, explicit_size);
+            return makeImmediate(value);
         },
     }
     unreachable;
 }
 
-fn decodeImmediateWithSignExtension(byte: u8, explicit_size: bool) !ImmediateField {
+fn decodeImmediateWithSignExtension(byte: u8) !ImmediateField {
     return ImmediateField{
         .value = ImmediateValue{
             .byte = byte,
         },
-        .explicit_size = explicit_size,
     };
 }
 
@@ -254,7 +255,7 @@ fn makeSrc(val: anytype) SrcType {
                 .immediate = val,
             };
         },
-        u8, u16 => return makeSrc(makeImmediate(val, false)),
+        u8, u16 => return makeSrc(makeImmediate(val)),
         else => {
             pretty().withColor(.red).print("unhandled type '{}' with value '{any}'", .{ @TypeOf(val), val });
         },
@@ -293,13 +294,15 @@ fn makeDst(val: anytype) DstType {
 
 pub const Instruction = struct {
     op: opcode.Mnemonic,
+    wide: OperatesOn,
     src: SrcType,
     dst: DstType,
 };
 
-fn makeInstruction(op: opcode.Mnemonic, dst: anytype, src: anytype) Instruction {
+fn makeInstruction(op: opcode.Mnemonic, operates_on: OperatesOn, dst: anytype, src: anytype) Instruction {
     return Instruction{
         .op = op,
+        .wide = operates_on,
         .dst = makeDst(dst),
         .src = makeSrc(src),
     };
@@ -321,16 +324,16 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
             const reg = decodeRegister(operates_on, 0b00111000, byte_2);
             const rm = try decodeRM(mode, operates_on, 0b00000111, byte_2, reader);
             switch (dir) {
-                Direction.FromRegister => return makeInstruction(op, rm, reg),
-                Direction.ToRegister => return makeInstruction(op, reg, rm),
+                Direction.FromRegister => return makeInstruction(op, operates_on, rm, reg),
+                Direction.ToRegister => return makeInstruction(op, operates_on, reg, rm),
             }
             unreachable;
         },
         .mov_imm_to_r => {
             const operates_on = decodeOperatesOn(0b00001000, byte_1);
             const reg = decodeRegister(operates_on, 0b00000111, byte_1);
-            const immediate = try decodeImmediate(operates_on, byte_2, reader, false);
-            return makeInstruction(op, reg, immediate);
+            const immediate = try decodeImmediate(operates_on, byte_2, reader);
+            return makeInstruction(op, operates_on, reg, immediate);
         },
         .mov_imm_to_rm => {
             const operates_on = decodeOperatesOn(0b00000001, byte_1);
@@ -341,8 +344,8 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
                 // DISP is always 16bit before data begins
                 _ = try reader.readByte();
             }
-            const immediate = try decodeImmediate(operates_on, try reader.readByte(), reader, true);
-            return makeInstruction(op, rm, immediate);
+            const immediate = try decodeImmediate(operates_on, try reader.readByte(), reader);
+            return makeInstruction(op, operates_on, rm, immediate);
         },
         .mov_accumulator_to_mem,
         .mov_mem_to_accumulator,
@@ -360,8 +363,8 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
             };
 
             switch (dir) {
-                .mov_accumulator_to_mem => return makeInstruction(op, makeDst(mem), reg),
-                .mov_mem_to_accumulator => return makeInstruction(op, reg, makeSrc(mem)),
+                .mov_accumulator_to_mem => return makeInstruction(op, operates_on, makeDst(mem), reg),
+                .mov_mem_to_accumulator => return makeInstruction(op, operates_on, reg, makeSrc(mem)),
                 else => unreachable,
             }
         },
@@ -377,18 +380,18 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
                 _ = try reader.readByte();
             }
             const immediate = if (sign_extension)
-                try decodeImmediateWithSignExtension(try reader.readByte(), false)
+                try decodeImmediateWithSignExtension(try reader.readByte())
             else
-                try decodeImmediate(operates_on, try reader.readByte(), reader, false);
-            return makeInstruction(op, rm, immediate);
+                try decodeImmediate(operates_on, try reader.readByte(), reader);
+            return makeInstruction(op, operates_on, rm, immediate);
         },
         .add_imm_to_acc,
         .sub_imm_to_acc,
         => {
             const operates_on = decodeOperatesOn(0b00000001, byte_1);
             const reg = if (operates_on == OperatesOn.Byte) Register.AL else Register.AX;
-            const immediate = try decodeImmediate(operates_on, byte_2, reader, false);
-            return makeInstruction(op, reg, immediate);
+            const immediate = try decodeImmediate(operates_on, byte_2, reader);
+            return makeInstruction(op, operates_on, reg, immediate);
         },
         .Unknown => {
             pretty().withColor(.red).print("Unknown opcode: {x} {b}\n", .{ byte_1, byte_2 });
@@ -534,6 +537,7 @@ test "decodeInstruction" {
             .in = &[_]u8{ 0b10001001, 0b11000011 },
             .expected = makeInstruction(
                 .mov_rm_to_from_r,
+                .Word,
                 Register.BX,
                 Register.AX,
             ),
@@ -543,6 +547,7 @@ test "decodeInstruction" {
             .in = &[2]u8{ 0b10001011, 0b11000011 },
             .expected = makeInstruction(
                 .mov_rm_to_from_r,
+                .Word,
                 Register.AX,
                 Register.BX,
             ),
@@ -552,6 +557,7 @@ test "decodeInstruction" {
             .in = &[2]u8{ 0b10001000, 0b11000011 },
             .expected = makeInstruction(
                 .mov_rm_to_from_r,
+                .Byte,
                 Register.BL,
                 Register.AL,
             ),
@@ -561,6 +567,7 @@ test "decodeInstruction" {
             .in = &[2]u8{ 0b10110001, 42 },
             .expected = makeInstruction(
                 .mov_imm_to_r,
+                .Byte,
                 Register.CL,
                 @as(u8, 42),
             ),
@@ -570,6 +577,7 @@ test "decodeInstruction" {
             .in = &[2]u8{ 0b10110001, 0b11010110 },
             .expected = makeInstruction(
                 .mov_imm_to_r,
+                .Byte,
                 Register.CL,
                 @as(u8, 256 - 42),
             ),
@@ -579,6 +587,7 @@ test "decodeInstruction" {
             .in = &[_]u8{ 0b10111011, 0x0, 0x0001 },
             .expected = makeInstruction(
                 .mov_imm_to_r,
+                .Word,
                 Register.BX,
                 @as(u16, 256),
             ),
@@ -588,6 +597,7 @@ test "decodeInstruction" {
             .in = &[_]u8{ 0b11000111, 0b10000101, 0x0, 0x1, 0x3, 0x2 },
             .expected = makeInstruction(
                 .mov_imm_to_rm,
+                .Word,
                 Memory{
                     .calc = EffectiveAddressCalculation.DI,
                     .displacement = Displacement{
@@ -598,7 +608,6 @@ test "decodeInstruction" {
                     .value = ImmediateValue{
                         .word = 515,
                     },
-                    .explicit_size = true,
                 },
             ),
         },
@@ -607,6 +616,7 @@ test "decodeInstruction" {
             .in = &[_]u8{ 0x80, 0b11000001, 0x8 },
             .expected = makeInstruction(
                 .add_imm_to_rm,
+                .Byte,
                 Register.CL,
                 @as(u8, 8),
             ),
@@ -616,16 +626,18 @@ test "decodeInstruction" {
             .in = &[_]u8{ 0x81, 0b11000001, 0x0, 0x1 },
             .expected = makeInstruction(
                 .add_imm_to_rm,
+                .Word,
                 Register.CX,
                 @as(u16, 256),
             ),
         },
         .{
             .name = "add cl, -8",
-            .in = &[_]u8{ 0x83, 0b11000001, 0b11110111 },
+            .in = &[_]u8{ 0x82, 0b11000001, 0b11110111 },
             .expected = makeInstruction(
                 .add_imm_to_rm,
-                Register.CX,
+                .Byte,
+                Register.CL,
                 @as(u8, 247),
             ),
         },
@@ -634,6 +646,7 @@ test "decodeInstruction" {
             .in = &[_]u8{ 0x04, 0x08 },
             .expected = makeInstruction(
                 .add_imm_to_acc,
+                .Byte,
                 Register.AL,
                 @as(u8, 8),
             ),
@@ -643,6 +656,7 @@ test "decodeInstruction" {
             .in = &[_]u8{ 0x80, 0b11101001, 0x8 },
             .expected = makeInstruction(
                 .sub_imm_to_rm,
+                .Byte,
                 Register.CL,
                 @as(u8, 8),
             ),
@@ -652,15 +666,17 @@ test "decodeInstruction" {
             .in = &[_]u8{ 0x81, 0b11101001, 0x0, 0x1 },
             .expected = makeInstruction(
                 .sub_imm_to_rm,
+                .Word,
                 Register.CX,
                 @as(u16, 256),
             ),
         },
         .{
-            .name = "sub cl, -8",
+            .name = "sub cx, -8",
             .in = &[_]u8{ 0x83, 0b11101001, 0b11110111 },
             .expected = makeInstruction(
                 .sub_imm_to_rm,
+                .Word,
                 Register.CX,
                 @as(u8, 247),
             ),
@@ -670,6 +686,7 @@ test "decodeInstruction" {
             .in = &[_]u8{ 0x2C, 0x08 },
             .expected = makeInstruction(
                 .sub_imm_to_acc,
+                .Byte,
                 Register.AL,
                 @as(u8, 8),
             ),

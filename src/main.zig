@@ -22,8 +22,9 @@ test "individual instructions" {
     try testEncodeDecode("mov ax, [bx + di - 37]");
     try testEncodeDecode("mov [si - 300], cx");
     try testEncodeDecode("mov dx, [bx - 32]");
-    try testEncodeDecode("mov [bp + di], byte 7");
-    try testEncodeDecode("mov [di + 901], word 347");
+    try testEncodeDecode("mov byte [bp + di], 7");
+    try testEncodeDecode("mov word [di + 901], 42");
+    try testEncodeDecode("mov word [di + 901], 347");
     try testEncodeDecode("mov bp, [5]");
     try testEncodeDecode("mov bx, [3458]");
     try testEncodeDecode("mov ax, [2555]");
@@ -46,8 +47,8 @@ test "individual instructions" {
     try testEncodeDecode("add [bx + 2], cx");
     try testEncodeDecode("add [bp + si + 4], bh");
     try testEncodeDecode("add [bp + di + 6], di");
-    // try testEncodeDecode("add byte [bx], 34");
-    // try testEncodeDecode("add word [bp + si + 1000], 29");
+    try testEncodeDecode("add byte [bx], 34");
+    try testEncodeDecode("add word [bp + si + 1000], 29");
     try testEncodeDecode("add ax, [bp]");
     try testEncodeDecode("add al, [bx + si]");
     try testEncodeDecode("add ax, bx");
@@ -71,8 +72,8 @@ test "individual instructions" {
     try testEncodeDecode("sub [bx + 2], cx");
     try testEncodeDecode("sub [bp + si + 4], bh");
     try testEncodeDecode("sub [bp + di + 6], di");
-    // try testEncodeDecode("sub byte [bx], 34");
-    // try testEncodeDecode("sub word [bx + di], 29");
+    try testEncodeDecode("sub byte [bx], 34");
+    try testEncodeDecode("sub word [bx + di], 29");
     try testEncodeDecode("sub ax, [bp]");
     try testEncodeDecode("sub al, [bx + si]");
     try testEncodeDecode("sub ax, bx");
@@ -140,9 +141,6 @@ fn testDecodeEncodeListing(comptime listing_file_name: []const u8) !void {
         .print("Success!\n", .{});
 }
 
-// 1. Assemble given ASM to bin
-// 2. Decode assembled bin
-// 3. Diff decoded ASM to original ASM
 fn testEncodeDecode(comptime asm_instruction: [:0]const u8) !void {
     pretty().print("\nEncode->Decode:", .{});
     pretty()
@@ -156,17 +154,27 @@ fn testEncodeDecode(comptime asm_instruction: [:0]const u8) !void {
     const postfix = "\n";
     const want_asm = std.fmt.comptimePrint("{s}{s}{s}", .{ prefix, asm_instruction, postfix });
 
+    // 1. Assemble given ASM to bin
     const alloc = std.testing.allocator;
     const got_bin = try runNasm(alloc, want_asm, file_name);
     defer alloc.free(got_bin);
 
+    // 2. Decode assembled bin
     const instructions = try x8086.decode(alloc, got_bin);
     defer instructions.deinit();
-
     const got_asm = try format.toAsm(alloc, instructions.items);
     defer got_asm.deinit();
 
+    // 3. Diff decoded ASM to original ASM
     try std.testing.expectEqualSlices(u8, want_asm, got_asm.items);
+
+    // 4. Encode the decoded ASM again
+    const reassembled_bin = try runNasm(alloc, got_asm.items, file_name);
+    defer alloc.free(reassembled_bin);
+
+    // 5. Diff binaries from 1 & 4
+    try std.testing.expectEqualSlices(u8, got_bin, reassembled_bin);
+
     pretty()
         .withColor(.bright_green)
         .print("Success!\n", .{});

@@ -71,46 +71,12 @@ const asmFormatter = struct {
     ) !void {
         switch (field.value) {
             .byte => |b| {
-                if (field.explicit_size) {
-                    try writer.print("byte {d}", .{b});
-                } else {
-                    try writer.print("{d}", .{b});
-                }
+                try writer.print("{d}", .{b});
             },
             .word => |w| {
-                if (field.explicit_size) {
-                    try writer.print("word {d}", .{w});
-                } else {
-                    try writer.print("{d}", .{w});
-                }
+                try writer.print("{d}", .{w});
             },
         }
-    }
-
-    fn srcType(
-        src_type: x8086.SrcType,
-        comptime _: []const u8,
-        _: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        switch (src_type) {
-            .register => |reg| try writer.print("{s}", .{std.enums.tagName(x8086.Register, reg).?}),
-            .immediate => |i| try writer.print("{s}", .{x8086Immediate(i)}),
-            .memory => |mem| try writer.print("{s}", .{x8086Memory(mem)}),
-        }
-    }
-
-    fn dstType(
-        dst_type: x8086.DstType,
-        comptime _: []const u8,
-        _: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        switch (dst_type) {
-            .register => |reg| return writer.print("{s}", .{std.enums.tagName(x8086.Register, reg).?}),
-            .memory => |mem| return writer.print("{s}", .{x8086Memory(mem)}),
-        }
-        unreachable;
     }
 
     fn instruction(
@@ -136,11 +102,25 @@ const asmFormatter = struct {
             => "sub",
             .Unknown => "<unknown>",
         };
-        return writer.print("{s} {s}, {}", .{
-            op,
-            x8086Dst(to_format.dst),
-            x8086Src(to_format.src),
-        });
+
+        try writer.print("{s} ", .{op});
+
+        switch (getExplicitSizeSpecifier(to_format)) {
+            .None => {},
+            .Byte => try writer.print("byte ", .{}),
+            .Word => try writer.print("word ", .{}),
+        }
+
+        switch (to_format.dst) {
+            .register => |reg| try writer.print("{s}, ", .{std.enums.tagName(x8086.Register, reg).?}),
+            .memory => |mem| try writer.print("{s}, ", .{x8086Memory(mem)}),
+        }
+
+        switch (to_format.src) {
+            .register => |reg| try writer.print("{s}", .{std.enums.tagName(x8086.Register, reg).?}),
+            .immediate => |i| try writer.print("{s}", .{x8086Immediate(i)}),
+            .memory => |mem| try writer.print("{s}", .{x8086Memory(mem)}),
+        }
     }
 };
 
@@ -152,16 +132,43 @@ pub fn x8086Immediate(to_format: x8086.ImmediateField) std.fmt.Formatter(asmForm
     return .{ .data = to_format };
 }
 
-pub fn x8086Src(to_format: x8086.SrcType) std.fmt.Formatter(asmFormatter.srcType) {
-    return .{ .data = to_format };
-}
-
-pub fn x8086Dst(to_format: x8086.DstType) std.fmt.Formatter(asmFormatter.dstType) {
-    return .{ .data = to_format };
-}
-
 pub fn x8086Instruction(to_format: x8086.Instruction) std.fmt.Formatter(asmFormatter.instruction) {
     return .{ .data = to_format };
+}
+
+const SizeSpecifier = enum {
+    None,
+    Byte,
+    Word,
+};
+
+fn getExplicitSizeSpecifier(instruction: x8086.Instruction) SizeSpecifier {
+    // Check if the destination is a memory operand.
+    const dst_is_memory = switch (instruction.dst) {
+        .memory => true,
+        else => false,
+    };
+
+    if (!dst_is_memory) {
+        return .None;
+    }
+
+    // If destination is memory, check the source. If the source is an immediate,
+    // we need to check if the size is ambiguous.
+    const src_is_immediate = switch (instruction.src) {
+        .immediate => true,
+        else => false,
+    };
+
+    if (!src_is_immediate) {
+        return .None;
+    }
+
+    switch (instruction.wide) {
+        .Byte => return .Byte,
+        .Word => return .Word,
+    }
+    return .None;
 }
 
 pub fn toAsm(alloc: std.mem.Allocator, instructions: []const x8086.Instruction) !std.ArrayList(u8) {
@@ -170,7 +177,6 @@ pub fn toAsm(alloc: std.mem.Allocator, instructions: []const x8086.Instruction) 
 
     var lineBuffer: [1024]u8 = undefined;
     for (instructions) |instruction| {
-        // std.fmt.Formatter(comptime formatFn: anytype)
         const instruction_string = try std.fmt.bufPrint(&lineBuffer, "{}\n", .{x8086Instruction(instruction)});
         try result.appendSlice(std.ascii.lowerString(instruction_string, instruction_string));
     }
