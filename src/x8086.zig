@@ -2,6 +2,7 @@ const std = @import("std");
 const assert = @import("std").debug.assert;
 const native_endian = @import("builtin").target.cpu.arch.endian();
 const opcode = @import("opcode.zig");
+const pretty = @import("log.zig").pretty;
 
 const OperatesOn = enum {
     Byte,
@@ -178,22 +179,38 @@ pub const ImmediateField = struct {
     explicit_size: bool,
 };
 
-fn decodeImmediate(operates_on: OperatesOn, reader: anytype, explicit_size: bool) !ImmediateField {
-    switch (operates_on) {
-        OperatesOn.Byte => return ImmediateField{
-            .value = ImmediateValue{
-                .byte = try reader.readByte(),
-            },
-            .explicit_size = explicit_size,
+fn makeImmediate(val: anytype, explicit_size: bool) ImmediateField {
+    return ImmediateField{
+        .value = switch (@TypeOf(val)) {
+            u8 => .{ .byte = val },
+            u16 => .{ .word = val },
+            ImmediateValue => val,
+            else => unreachable,
         },
-        OperatesOn.Word => return ImmediateField{
-            .value = ImmediateValue{
-                .word = try reader.readInt(u16, native_endian),
-            },
-            .explicit_size = explicit_size,
+        .explicit_size = explicit_size,
+    };
+}
+
+fn decodeImmediate(operates_on: OperatesOn, byte: u8, reader: anytype, explicit_size: bool) !ImmediateField {
+    switch (operates_on) {
+        OperatesOn.Byte => return makeImmediate(byte, explicit_size),
+        OperatesOn.Word => {
+            // We alreadty have the first byte, read the second byte and construct an u16 (native endianness)
+            const second_byte = try reader.readByte();
+            const value: u16 = @as(u16, byte) | (@as(u16, second_byte) << 8);
+            return makeImmediate(value, explicit_size);
         },
     }
     unreachable;
+}
+
+fn decodeImmediateWithSignExtension(byte: u8, explicit_size: bool) !ImmediateField {
+    return ImmediateField{
+        .value = ImmediateValue{
+            .byte = byte,
+        },
+        .explicit_size = explicit_size,
+    };
 }
 
 const SrcTypeTag = enum {
@@ -237,7 +254,10 @@ fn makeSrc(val: anytype) SrcType {
                 .immediate = val,
             };
         },
-        else => unreachable,
+        u8, u16 => return makeSrc(makeImmediate(val, false)),
+        else => {
+            pretty().withColor(.red).print("unhandled type '{}' with value '{any}'", .{ @TypeOf(val), val });
+        },
     }
 }
 
@@ -265,7 +285,9 @@ fn makeDst(val: anytype) DstType {
                 .memory => |m| return makeDst(m),
             }
         },
-        else => unreachable,
+        else => {
+            pretty().withColor(.red).print("unhandled type '{}' with value '{any}'", .{ @TypeOf(val), val });
+        },
     }
 }
 
@@ -285,13 +307,15 @@ fn makeInstruction(op: opcode.Mnemonic, dst: anytype, src: anytype) Instruction 
 
 fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
     const byte_1 = try reader.readByte();
-    const op = opcode.decode(byte_1);
+    const byte_2 = try reader.readByte();
+    const op = opcode.decode(byte_1, byte_2);
 
     switch (op) {
-        opcode.Mnemonic.mov_rm_to_from_r => {
-            const dir = decodeDirection(0b00000010, byte_1);
+        opcode.Mnemonic.add_rm_with_r_to_either,
+        opcode.Mnemonic.mov_rm_to_from_r,
+        => {
             const operates_on = decodeOperatesOn(0b00000001, byte_1);
-            const byte_2 = try reader.readByte();
+            const dir = decodeDirection(0b00000010, byte_1);
             const mode = decodeMode(0b11000000, byte_2);
             const reg = decodeRegister(operates_on, 0b00111000, byte_2);
             const rm = try decodeRM(mode, operates_on, 0b00000111, byte_2, reader);
@@ -304,12 +328,11 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
         opcode.Mnemonic.mov_imm_to_r => {
             const operates_on = decodeOperatesOn(0b00001000, byte_1);
             const reg = decodeRegister(operates_on, 0b00000111, byte_1);
-            const immediate = try decodeImmediate(operates_on, reader, false);
+            const immediate = try decodeImmediate(operates_on, byte_2, reader, false);
             return makeInstruction(op, reg, immediate);
         },
         opcode.Mnemonic.mov_imm_to_rm => {
             const operates_on = decodeOperatesOn(0b00000001, byte_1);
-            const byte_2 = try reader.readByte();
             const mode = decodeMode(0b11000000, byte_2);
             assert(mode != Mode.Reg);
             const rm = try decodeRM(mode, operates_on, 0b00000111, byte_2, reader);
@@ -317,61 +340,53 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
                 // DISP is always 16bit before data begins
                 _ = try reader.readByte();
             }
-            const immediate = try decodeImmediate(operates_on, reader, true);
+            const immediate = try decodeImmediate(operates_on, try reader.readByte(), reader, true);
             return makeInstruction(op, rm, immediate);
         },
-        opcode.Mnemonic.mov_accumulator_to_mem => {
+        opcode.Mnemonic.mov_accumulator_to_mem,
+        opcode.Mnemonic.mov_mem_to_accumulator,
+        => |dir| {
             const operates_on = decodeOperatesOn(0b00000001, byte_1);
-            const src = SrcType{
-                .register = if (operates_on == OperatesOn.Byte) .AL else .AX,
-            };
-            var displacement: Displacement = undefined;
-            if (operates_on == OperatesOn.Byte) {
-                displacement = Displacement{
-                    .byte = try reader.readByte(),
-                };
-                // Fixed length instruction, need to skip a byte
-                _ = try reader.readByte();
-            } else {
-                displacement = Displacement{
-                    .word = try reader.readInt(u16, native_endian),
-                };
-            }
-            const dst = DstType{
-                .memory = Memory{
-                    .calc = EffectiveAddressCalculation.DIRECT_ADDRESS,
-                    .displacement = displacement,
-                },
-            };
-            return Instruction{
-                .op = op,
-                .src = src,
-                .dst = dst,
-            };
-        },
-        opcode.Mnemonic.mov_mem_to_accumulator => {
-            const operates_on = decodeOperatesOn(0b00000001, byte_1);
-            const dst_reg = if (operates_on == OperatesOn.Byte) Register.AL else Register.AX;
-            const displacement = blk: {
-                if (operates_on == OperatesOn.Byte) {
-                    const val = try reader.readByte();
-                    // Fixed length instruction, need to skip a byte
-                    _ = try reader.readByte();
-                    break :blk Displacement{
-                        .byte = val,
-                    };
-                } else {
-                    break :blk Displacement{
-                        .word = try reader.readInt(u16, native_endian),
-                    };
-                }
-            };
-            return makeInstruction(op, dst_reg, makeSrc(Memory{
+            const reg = if (operates_on == OperatesOn.Byte) Register.AL else Register.AX;
+            const displacement = if (operates_on == OperatesOn.Byte)
+                Displacement{ .byte = byte_2 }
+            else
+                Displacement{ .word = @as(u16, byte_2) | (@as(u16, try reader.readByte()) << 8) };
+
+            const mem = Memory{
                 .calc = EffectiveAddressCalculation.DIRECT_ADDRESS,
                 .displacement = displacement,
-            }));
+            };
+
+            switch (dir) {
+                opcode.Mnemonic.mov_accumulator_to_mem => return makeInstruction(op, makeDst(mem), reg),
+                opcode.Mnemonic.mov_mem_to_accumulator => return makeInstruction(op, reg, makeSrc(mem)),
+                else => unreachable,
+            }
+        },
+        opcode.Mnemonic.add_imm_to_rm => {
+            const operates_on = decodeOperatesOn(0b00000001, byte_1);
+            const sign_extension = (byte_1 & 0b00000010) != 0;
+            const mode = decodeMode(0b11000000, byte_2);
+            const rm = try decodeRM(mode, operates_on, 0b00000111, byte_2, reader);
+            if (mode == Mode.Mem8BitDisplacement) {
+                // DISP is always 16bit before data begins
+                _ = try reader.readByte();
+            }
+            const immediate = if (sign_extension)
+                try decodeImmediateWithSignExtension(try reader.readByte(), false)
+            else
+                try decodeImmediate(operates_on, try reader.readByte(), reader, false);
+            return makeInstruction(op, rm, immediate);
+        },
+        opcode.Mnemonic.add_imm_to_acc => {
+            const operates_on = decodeOperatesOn(0b00000001, byte_1);
+            const reg = if (operates_on == OperatesOn.Byte) Register.AL else Register.AX;
+            const immediate = try decodeImmediate(operates_on, byte_2, reader, false);
+            return makeInstruction(op, reg, immediate);
         },
         opcode.Mnemonic.Unknown => {
+            pretty().withColor(.red).print("Unknown opcode: {x} {b}\n", .{ byte_1, byte_2 });
             return error.UnknownInstruction;
         },
     }
@@ -512,130 +527,134 @@ test "decodeInstruction" {
         .{
             .name = "mov BX, AX",
             .in = &[_]u8{ 0b10001001, 0b11000011 },
-            .expected = .{
-                .op = opcode.Mnemonic.mov_rm_to_from_r,
-                .src = SrcType{
-                    .register = Register.AX,
-                },
-                .dst = DstType{
-                    .register = Register.BX,
-                },
-            },
+            .expected = makeInstruction(
+                .mov_rm_to_from_r,
+                Register.BX,
+                Register.AX,
+            ),
         },
         .{
             .name = "mov AX, BX",
             .in = &[2]u8{ 0b10001011, 0b11000011 },
-            .expected = .{
-                .op = opcode.Mnemonic.mov_rm_to_from_r,
-                .src = SrcType{
-                    .register = Register.BX,
-                },
-                .dst = DstType{
-                    .register = Register.AX,
-                },
-            },
+            .expected = makeInstruction(
+                .mov_rm_to_from_r,
+                Register.AX,
+                Register.BX,
+            ),
         },
         .{
             .name = "mov BL, AL",
             .in = &[2]u8{ 0b10001000, 0b11000011 },
-            .expected = .{
-                .op = opcode.Mnemonic.mov_rm_to_from_r,
-                .src = SrcType{
-                    .register = Register.AL,
-                },
-                .dst = DstType{
-                    .register = Register.BL,
-                },
-            },
+            .expected = makeInstruction(
+                .mov_rm_to_from_r,
+                Register.BL,
+                Register.AL,
+            ),
         },
         .{
             .name = "mov CL, 42",
             .in = &[2]u8{ 0b10110001, 42 },
-            .expected = .{
-                .op = opcode.Mnemonic.mov_imm_to_r,
-                .src = SrcType{
-                    .immediate = ImmediateField{
-                        .value = ImmediateValue{
-                            .byte = 42,
-                        },
-                        .explicit_size = false,
-                    },
-                },
-                .dst = DstType{
-                    .register = Register.CL,
-                },
-            },
+            .expected = makeInstruction(
+                .mov_imm_to_r,
+                Register.CL,
+                @as(u8, 42),
+            ),
         },
         .{
             .name = "mov CL, -42",
             .in = &[2]u8{ 0b10110001, 0b11010110 },
-            .expected = .{
-                .op = opcode.Mnemonic.mov_imm_to_r,
-                .src = SrcType{
-                    .immediate = ImmediateField{
-                        .value = ImmediateValue{
-                            .byte = 256 - 42,
-                        },
-                        .explicit_size = false,
-                    },
-                },
-                .dst = DstType{
-                    .register = Register.CL,
-                },
-            },
+            .expected = makeInstruction(
+                .mov_imm_to_r,
+                Register.CL,
+                @as(u8, 256 - 42),
+            ),
         },
         .{
             .name = "mov BX, 256",
             .in = &[_]u8{ 0b10111011, 0x0, 0x0001 },
-            .expected = .{
-                .op = opcode.Mnemonic.mov_imm_to_r,
-                .src = SrcType{
-                    .immediate = ImmediateField{
-                        .value = ImmediateValue{
-                            .word = 256,
-                        },
-                        .explicit_size = false,
-                    },
-                },
-                .dst = DstType{
-                    .register = Register.BX,
-                },
-            },
+            .expected = makeInstruction(
+                .mov_imm_to_r,
+                Register.BX,
+                @as(u16, 256),
+            ),
         },
         .{
             .name = "mov [di + 256], word 515",
             .in = &[_]u8{ 0b11000111, 0b10000101, 0x0, 0x1, 0x3, 0x2 },
-            .expected = .{
-                .op = opcode.Mnemonic.mov_imm_to_rm,
-                .src = SrcType{
-                    .immediate = ImmediateField{
-                        .value = ImmediateValue{
-                            .word = 515,
-                        },
-                        .explicit_size = true,
+            .expected = makeInstruction(
+                .mov_imm_to_rm,
+                Memory{
+                    .calc = EffectiveAddressCalculation.DI,
+                    .displacement = Displacement{
+                        .word = 256,
                     },
                 },
-                .dst = DstType{
-                    .memory = Memory{
-                        .calc = EffectiveAddressCalculation.DI,
-                        .displacement = Displacement{
-                            .word = 256,
-                        },
+                ImmediateField{
+                    .value = ImmediateValue{
+                        .word = 515,
                     },
+                    .explicit_size = true,
                 },
-            },
+            ),
+        },
+        .{
+            .name = "add cl, 8",
+            .in = &[_]u8{ 0x80, 0b11000001, 0x8 },
+            .expected = makeInstruction(
+                .add_imm_to_rm,
+                Register.CL,
+                @as(u8, 8),
+            ),
+        },
+        .{
+            .name = "add cx, 256",
+            .in = &[_]u8{ 0x81, 0b11000001, 0x0, 0x1 },
+            .expected = makeInstruction(
+                .add_imm_to_rm,
+                Register.CX,
+                @as(u16, 256),
+            ),
+        },
+        .{
+            .name = "add cl, -8",
+            .in = &[_]u8{ 0x83, 0b11000001, 0b11110111 },
+            .expected = makeInstruction(
+                .add_imm_to_rm,
+                Register.CX,
+                @as(u8, 247),
+            ),
+        },
+        .{
+            .name = "add al, 8",
+            .in = &[_]u8{ 0x04, 0x08 },
+            .expected = makeInstruction(
+                .add_imm_to_acc,
+                Register.AL,
+                @as(u8, 8),
+            ),
         },
     };
-    std.debug.print("\n", .{});
+
+    std.debug.print("\nTest decodeInstructions\n", .{});
+    try pretty().cfg.setColor(std.io.getStdErr(), .bright_black);
+    defer pretty().cfg.setColor(std.io.getStdErr(), .reset) catch {};
+
+    const err_out = pretty().withColor(.red);
+
     for (test_cases) |case| {
+        std.debug.print("-> {s}\n", .{case.name});
         var stream = std.io.fixedBufferStream(case.in[0..]);
         var reader = stream.reader().any();
-        const actual = decodeInstruction(&reader);
-        try std.testing.expectEqual(case.expected, actual);
+        const actual = try decodeInstruction(&reader);
 
         std.testing.expectEqual(case.expected, actual) catch |err| {
-            std.debug.print("Test failure: {s}\n", .{case.name});
+            err_out.print("FAILURE!\n", .{});
+            err_out.print("Expected:\n", .{});
+            try std.json.stringify(case.expected, .{}, std.io.getStdErr().writer());
+            err_out.print("\nGot:\n", .{});
+            try std.json.stringify(actual, .{}, std.io.getStdErr().writer());
             return err;
         };
     }
+    pretty().withColor(.green).print("Success!\n", .{});
 }

@@ -125,6 +125,9 @@ const asmFormatter = struct {
             opcode.Mnemonic.mov_imm_to_rm => "mov",
             opcode.Mnemonic.mov_accumulator_to_mem => "mov",
             opcode.Mnemonic.mov_mem_to_accumulator => "mov",
+            opcode.Mnemonic.add_rm_with_r_to_either => "add",
+            opcode.Mnemonic.add_imm_to_acc => "add",
+            opcode.Mnemonic.add_imm_to_rm => "add",
             opcode.Mnemonic.Unknown => "<unknown>",
         };
         return writer.print("{s} {s}, {}", .{

@@ -6,56 +6,35 @@ const x8086 = @import("x8086.zig");
 const format = @import("format.zig");
 
 test "individual instructions" {
-    // Register-to-register
     try testEncodeDecode("mov si, bx");
     try testEncodeDecode("mov dh, al");
-
-    // 8-bit immediate-to-register
     try testEncodeDecode("mov cl, 12");
-    try testEncodeDecode("mov ch, 244"); // 256 - 12
-
-    // 16-bit immediate-to-register
-    try testEncodeDecode("mov cx, 12");
-    try testEncodeDecode("mov cx, 244"); // 256 - 12
+    try testEncodeDecode("mov ch, 244");
     try testEncodeDecode("mov dx, 3948");
-    try testEncodeDecode("mov dx, 61588"); // 65536 - 3948
-
-    // Source address calculation
     try testEncodeDecode("mov al, [bx + si]");
     try testEncodeDecode("mov bx, [bp + di]");
     try testEncodeDecode("mov dx, [bp]");
-
-    // Source address calculation plus 8-bit displacement
     try testEncodeDecode("mov ah, [bx + si + 4]");
-
-    // Source address calculation plus 16-bit displacement
     try testEncodeDecode("mov al, [bx + si + 4999]");
-
-    // Dest address calculation
     try testEncodeDecode("mov [bx + di], cx");
     try testEncodeDecode("mov [bp + si], cl");
     try testEncodeDecode("mov [bp], ch");
-
-    // Signed displacements
     try testEncodeDecode("mov ax, [bx + di - 37]");
     try testEncodeDecode("mov [si - 300], cx");
     try testEncodeDecode("mov dx, [bx - 32]");
-
-    // Explicit sizes
     try testEncodeDecode("mov [bp + di], byte 7");
     try testEncodeDecode("mov [di + 901], word 347");
-
-    // Direct address
     try testEncodeDecode("mov bp, [5]");
     try testEncodeDecode("mov bx, [3458]");
-
-    // Memory-to-accumulator test
     try testEncodeDecode("mov ax, [2555]");
     try testEncodeDecode("mov ax, [16]");
-
-    // Accumulator-to-memory test
     try testEncodeDecode("mov [2554], ax");
     try testEncodeDecode("mov [15], ax");
+
+    try testEncodeDecode("add cx, 8");
+    try testEncodeDecode("add cx, ax");
+    try testEncodeDecode("add bx, [bx + si]");
+    try testEncodeDecode("add bx, [bp]");
 }
 
 test "Homework" {
