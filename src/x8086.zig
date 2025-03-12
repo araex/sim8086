@@ -311,8 +311,9 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
     const op = opcode.decode(byte_1, byte_2);
 
     switch (op) {
-        opcode.Mnemonic.add_rm_with_r_to_either,
-        opcode.Mnemonic.mov_rm_to_from_r,
+        .add_rm_with_r_to_either,
+        .sub_rm_and_r_to_either,
+        .mov_rm_to_from_r,
         => {
             const operates_on = decodeOperatesOn(0b00000001, byte_1);
             const dir = decodeDirection(0b00000010, byte_1);
@@ -325,13 +326,13 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
             }
             unreachable;
         },
-        opcode.Mnemonic.mov_imm_to_r => {
+        .mov_imm_to_r => {
             const operates_on = decodeOperatesOn(0b00001000, byte_1);
             const reg = decodeRegister(operates_on, 0b00000111, byte_1);
             const immediate = try decodeImmediate(operates_on, byte_2, reader, false);
             return makeInstruction(op, reg, immediate);
         },
-        opcode.Mnemonic.mov_imm_to_rm => {
+        .mov_imm_to_rm => {
             const operates_on = decodeOperatesOn(0b00000001, byte_1);
             const mode = decodeMode(0b11000000, byte_2);
             assert(mode != Mode.Reg);
@@ -343,8 +344,8 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
             const immediate = try decodeImmediate(operates_on, try reader.readByte(), reader, true);
             return makeInstruction(op, rm, immediate);
         },
-        opcode.Mnemonic.mov_accumulator_to_mem,
-        opcode.Mnemonic.mov_mem_to_accumulator,
+        .mov_accumulator_to_mem,
+        .mov_mem_to_accumulator,
         => |dir| {
             const operates_on = decodeOperatesOn(0b00000001, byte_1);
             const reg = if (operates_on == OperatesOn.Byte) Register.AL else Register.AX;
@@ -359,12 +360,14 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
             };
 
             switch (dir) {
-                opcode.Mnemonic.mov_accumulator_to_mem => return makeInstruction(op, makeDst(mem), reg),
-                opcode.Mnemonic.mov_mem_to_accumulator => return makeInstruction(op, reg, makeSrc(mem)),
+                .mov_accumulator_to_mem => return makeInstruction(op, makeDst(mem), reg),
+                .mov_mem_to_accumulator => return makeInstruction(op, reg, makeSrc(mem)),
                 else => unreachable,
             }
         },
-        opcode.Mnemonic.add_imm_to_rm => {
+        .add_imm_to_rm,
+        .sub_imm_to_rm,
+        => {
             const operates_on = decodeOperatesOn(0b00000001, byte_1);
             const sign_extension = (byte_1 & 0b00000010) != 0;
             const mode = decodeMode(0b11000000, byte_2);
@@ -379,13 +382,15 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
                 try decodeImmediate(operates_on, try reader.readByte(), reader, false);
             return makeInstruction(op, rm, immediate);
         },
-        opcode.Mnemonic.add_imm_to_acc => {
+        .add_imm_to_acc,
+        .sub_imm_to_acc,
+        => {
             const operates_on = decodeOperatesOn(0b00000001, byte_1);
             const reg = if (operates_on == OperatesOn.Byte) Register.AL else Register.AX;
             const immediate = try decodeImmediate(operates_on, byte_2, reader, false);
             return makeInstruction(op, reg, immediate);
         },
-        opcode.Mnemonic.Unknown => {
+        .Unknown => {
             pretty().withColor(.red).print("Unknown opcode: {x} {b}\n", .{ byte_1, byte_2 });
             return error.UnknownInstruction;
         },
@@ -629,6 +634,42 @@ test "decodeInstruction" {
             .in = &[_]u8{ 0x04, 0x08 },
             .expected = makeInstruction(
                 .add_imm_to_acc,
+                Register.AL,
+                @as(u8, 8),
+            ),
+        },
+        .{
+            .name = "sub cl, 8",
+            .in = &[_]u8{ 0x80, 0b11101001, 0x8 },
+            .expected = makeInstruction(
+                .sub_imm_to_rm,
+                Register.CL,
+                @as(u8, 8),
+            ),
+        },
+        .{
+            .name = "sub cx, 256",
+            .in = &[_]u8{ 0x81, 0b11101001, 0x0, 0x1 },
+            .expected = makeInstruction(
+                .sub_imm_to_rm,
+                Register.CX,
+                @as(u16, 256),
+            ),
+        },
+        .{
+            .name = "sub cl, -8",
+            .in = &[_]u8{ 0x83, 0b11101001, 0b11110111 },
+            .expected = makeInstruction(
+                .sub_imm_to_rm,
+                Register.CX,
+                @as(u8, 247),
+            ),
+        },
+        .{
+            .name = "sub al, 8",
+            .in = &[_]u8{ 0x2C, 0x08 },
+            .expected = makeInstruction(
+                .sub_imm_to_acc,
                 Register.AL,
                 @as(u8, 8),
             ),

@@ -31,10 +31,55 @@ test "individual instructions" {
     try testEncodeDecode("mov [2554], ax");
     try testEncodeDecode("mov [15], ax");
 
-    try testEncodeDecode("add cx, 8");
-    try testEncodeDecode("add cx, ax");
     try testEncodeDecode("add bx, [bx + si]");
     try testEncodeDecode("add bx, [bp]");
+    try testEncodeDecode("add si, 2");
+    try testEncodeDecode("add bp, 2");
+    try testEncodeDecode("add cx, 8");
+    try testEncodeDecode("add bx, [bp]");
+    try testEncodeDecode("add cx, [bx + 2]");
+    try testEncodeDecode("add bh, [bp + si + 4]");
+    try testEncodeDecode("add di, [bp + di + 6]");
+    try testEncodeDecode("add [bx + si], bx");
+    try testEncodeDecode("add [bp], bx");
+    try testEncodeDecode("add [bp], bx");
+    try testEncodeDecode("add [bx + 2], cx");
+    try testEncodeDecode("add [bp + si + 4], bh");
+    try testEncodeDecode("add [bp + di + 6], di");
+    // try testEncodeDecode("add byte [bx], 34");
+    // try testEncodeDecode("add word [bp + si + 1000], 29");
+    try testEncodeDecode("add ax, [bp]");
+    try testEncodeDecode("add al, [bx + si]");
+    try testEncodeDecode("add ax, bx");
+    try testEncodeDecode("add al, ah");
+    try testEncodeDecode("add ax, 1000");
+    try testEncodeDecode("add al, 226");
+    try testEncodeDecode("add al, 9");
+
+    try testEncodeDecode("sub bx, [bx + si]");
+    try testEncodeDecode("sub bx, [bp]");
+    try testEncodeDecode("sub si, 2");
+    try testEncodeDecode("sub bp, 2");
+    try testEncodeDecode("sub cx, 8");
+    try testEncodeDecode("sub bx, [bp]");
+    try testEncodeDecode("sub cx, [bx + 2]");
+    try testEncodeDecode("sub bh, [bp + si + 4]");
+    try testEncodeDecode("sub di, [bp + di + 6]");
+    try testEncodeDecode("sub [bx + si], bx");
+    try testEncodeDecode("sub [bp], bx");
+    try testEncodeDecode("sub [bp], bx");
+    try testEncodeDecode("sub [bx + 2], cx");
+    try testEncodeDecode("sub [bp + si + 4], bh");
+    try testEncodeDecode("sub [bp + di + 6], di");
+    // try testEncodeDecode("sub byte [bx], 34");
+    // try testEncodeDecode("sub word [bx + di], 29");
+    try testEncodeDecode("sub ax, [bp]");
+    try testEncodeDecode("sub al, [bx + si]");
+    try testEncodeDecode("sub ax, bx");
+    try testEncodeDecode("sub al, ah");
+    try testEncodeDecode("sub ax, 1000");
+    try testEncodeDecode("sub al, 226");
+    try testEncodeDecode("sub al, 9");
 }
 
 test "Homework" {
