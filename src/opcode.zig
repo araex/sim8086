@@ -1,7 +1,7 @@
 const std = @import("std");
 const assert = @import("std").debug.assert;
 
-pub const Mnemonic = enum {
+pub const Opcode = enum {
     Unknown,
     mov_rm_to_from_r,
     mov_imm_to_rm,
@@ -22,7 +22,7 @@ pub const Mnemonic = enum {
 };
 
 // http://ref.x86asm.net/coder32.html#xB8
-const opcode_table = [256]Mnemonic{
+const opcode_table = [256]Opcode{
     .add_rm_with_r_to_either, // <- 0x00
     .add_rm_with_r_to_either,
     .add_rm_with_r_to_either,
@@ -281,7 +281,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
 };
 
-const opcode_extension_table_0x80 = [_]Mnemonic{
+const opcode_extension_table_0x80 = [_]Opcode{
     .add_imm_to_rm,
     .Unknown,
     .Unknown,
@@ -291,7 +291,7 @@ const opcode_extension_table_0x80 = [_]Mnemonic{
     .Unknown,
     .cmp_imm_with_rm,
 };
-const opcode_extension_table_0x81 = [_]Mnemonic{
+const opcode_extension_table_0x81 = [_]Opcode{
     .add_imm_to_rm,
     .Unknown,
     .Unknown,
@@ -301,7 +301,7 @@ const opcode_extension_table_0x81 = [_]Mnemonic{
     .Unknown,
     .cmp_imm_with_rm,
 };
-const opcode_extension_table_0x82 = [_]Mnemonic{
+const opcode_extension_table_0x82 = [_]Opcode{
     .add_imm_to_rm,
     .Unknown,
     .Unknown,
@@ -311,7 +311,7 @@ const opcode_extension_table_0x82 = [_]Mnemonic{
     .Unknown,
     .cmp_imm_with_rm,
 };
-const opcode_extension_table_0x83 = [_]Mnemonic{
+const opcode_extension_table_0x83 = [_]Opcode{
     .add_imm_to_rm,
     .Unknown,
     .Unknown,
@@ -326,7 +326,7 @@ fn hasOpcodeExtension(byte: u8) bool {
     return byte == 0x80 or byte == 0x81 or byte == 0x82 or byte == 0x83;
 }
 
-fn decodeWithExtensions(byte_1: u8, byte_2: u8) Mnemonic {
+fn decodeWithExtensions(byte_1: u8, byte_2: u8) Opcode {
     const ext_bits: u3 = @intCast((byte_2 & 0b00111000) >> 3);
     switch (byte_1) {
         0x80 => return opcode_extension_table_0x80[ext_bits],
@@ -337,7 +337,7 @@ fn decodeWithExtensions(byte_1: u8, byte_2: u8) Mnemonic {
     }
 }
 
-pub fn decode(byte_1: u8, byte_2: u8) Mnemonic {
+pub fn decode(byte_1: u8, byte_2: u8) Opcode {
     if (!hasOpcodeExtension(byte_1)) {
         return opcode_table[byte_1];
     }
@@ -347,7 +347,7 @@ pub fn decode(byte_1: u8, byte_2: u8) Mnemonic {
 test "decode" {
     const TestCase = struct {
         in: [2]u8,
-        expected: Mnemonic,
+        expected: Opcode,
     };
     const test_cases = [_]TestCase{
         .{ .in = .{ 0x00, 0b0000000 }, .expected = .add_rm_with_r_to_either },

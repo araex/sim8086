@@ -85,7 +85,7 @@ const asmFormatter = struct {
         _: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
-        const op = switch (to_format.op) {
+        const mnemonic = switch (to_format.op) {
             .mov_rm_to_from_r,
             .mov_imm_to_r,
             .mov_imm_to_rm,
@@ -107,7 +107,7 @@ const asmFormatter = struct {
             .Unknown => "<unknown>",
         };
 
-        try writer.print("{s} ", .{op});
+        try writer.print("{s} ", .{mnemonic});
 
         switch (getExplicitSizeSpecifier(to_format)) {
             .None => {},

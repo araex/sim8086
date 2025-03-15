@@ -293,13 +293,13 @@ fn makeDst(val: anytype) DstType {
 }
 
 pub const Instruction = struct {
-    op: opcode.Mnemonic,
+    op: opcode.Opcode,
     wide: OperatesOn,
     src: SrcType,
     dst: DstType,
 };
 
-fn makeInstruction(op: opcode.Mnemonic, operates_on: OperatesOn, dst: anytype, src: anytype) Instruction {
+fn makeInstruction(op: opcode.Opcode, operates_on: OperatesOn, dst: anytype, src: anytype) Instruction {
     return Instruction{
         .op = op,
         .wide = operates_on,
