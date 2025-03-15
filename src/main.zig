@@ -124,6 +124,10 @@ test "Homework Part 1 - Listing 40" {
     try testDecodeEncodeListing("listing_0040_challenge_movs");
 }
 
+test "Homework Part 1 - Listing 41" {
+    try testDecodeEncodeListing("listing_0041_add_sub_cmp_jnz");
+}
+
 // 1. Read given bin from data folder
 // 2. Decode bin to ASM
 // 3. Assemble decoded ASM to new bin

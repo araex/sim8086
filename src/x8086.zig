@@ -214,6 +214,16 @@ fn decodeImmediateWithSignExtension(byte: u8) !ImmediateField {
     };
 }
 
+pub const JumpDestination = struct {
+    increment: i8,
+};
+
+fn decodeJumpDestination(byte: u8) JumpDestination {
+    return JumpDestination{
+        .increment = @bitCast(byte),
+    };
+}
+
 const SrcTypeTag = enum {
     register,
     immediate,
@@ -223,6 +233,7 @@ const SrcTypeTag = enum {
 const DstTypeTag = enum {
     register,
     memory,
+    jump,
 };
 
 pub const SrcType = union(SrcTypeTag) {
@@ -231,9 +242,10 @@ pub const SrcType = union(SrcTypeTag) {
     memory: Memory,
 };
 
-fn makeSrc(val: anytype) SrcType {
+fn makeSrc(val: anytype) ?SrcType {
     switch (@TypeOf(val)) {
         SrcType => return val,
+        ?SrcType => return val,
         Register => {
             return SrcType{
                 .register = val,
@@ -256,8 +268,10 @@ fn makeSrc(val: anytype) SrcType {
             };
         },
         u8, u16 => return makeSrc(makeImmediate(val)),
+        @TypeOf(null) => return null,
         else => {
             pretty().withColor(.red).print("unhandled type '{}' with value '{any}'", .{ @TypeOf(val), val });
+            unreachable;
         },
     }
 }
@@ -265,6 +279,7 @@ fn makeSrc(val: anytype) SrcType {
 pub const DstType = union(DstTypeTag) {
     register: Register,
     memory: Memory,
+    jump: JumpDestination,
 };
 
 fn makeDst(val: anytype) DstType {
@@ -286,6 +301,11 @@ fn makeDst(val: anytype) DstType {
                 .memory => |m| return makeDst(m),
             }
         },
+        JumpDestination => {
+            return DstType{
+                .jump = val,
+            };
+        },
         else => {
             pretty().withColor(.red).print("unhandled type '{}' with value '{any}'", .{ @TypeOf(val), val });
         },
@@ -295,7 +315,7 @@ fn makeDst(val: anytype) DstType {
 pub const Instruction = struct {
     op: opcode.Opcode,
     wide: OperatesOn,
-    src: SrcType,
+    src: ?SrcType,
     dst: DstType,
 };
 
@@ -396,8 +416,12 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
             const immediate = try decodeImmediate(operates_on, byte_2, reader);
             return makeInstruction(op, operates_on, reg, immediate);
         },
+        .jo, .jno, .jb_jnae, .jnb_jae, .je_jz, .jne_jnz, .jbe_jna, .jnbe_ja, .js, .jns, .jp_jpe, .jnp_jpo, .jl_jnge, .jnl_jge, .jle_jng, .jnle_jg => {
+            const jump = decodeJumpDestination(byte_2);
+            return makeInstruction(op, .Byte, jump, null);
+        },
         .Unknown => {
-            pretty().withColor(.red).print("Unknown opcode: {x} {b}\n", .{ byte_1, byte_2 });
+            pretty().withColor(.red).print("Unknown opcode: {x} {x}\n", .{ byte_1, byte_2 });
             return error.UnknownInstruction;
         },
     }

@@ -79,6 +79,21 @@ const asmFormatter = struct {
         }
     }
 
+    fn jumpDestination(
+        jump: x8086.JumpDestination,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        if (jump.increment > (0 - 2)) {
+            try writer.print("$+{d}+0", .{jump.increment});
+        } else if (jump.increment == 0) {
+            try writer.print("$+0", .{});
+        } else {
+            try writer.print("${d}+0", .{jump.increment});
+        }
+    }
+
     fn instruction(
         to_format: x8086.Instruction,
         comptime _: []const u8,
@@ -104,26 +119,51 @@ const asmFormatter = struct {
             .cmp_imm_with_rm,
             .cmp_rm_with_r,
             => "cmp",
+            .jo => "jo",
+            .jno => "jno",
+            .jb_jnae => "jb",
+            .jnb_jae => "jnb",
+            .je_jz => "je",
+            .jne_jnz => "jne",
+            .jbe_jna => "jbe",
+            .jnbe_ja => "jnbe",
+            .js => "js",
+            .jns => "jns",
+            .jp_jpe => "jp",
+            .jnp_jpo => "jnp",
+            .jl_jnge => "jl",
+            .jnl_jge => "jnl",
+            .jle_jng => "jle",
+            .jnle_jg => "jnle",
             .Unknown => "<unknown>",
         };
 
-        try writer.print("{s} ", .{mnemonic});
+        try writer.print("{s}", .{mnemonic});
 
         switch (getExplicitSizeSpecifier(to_format)) {
             .None => {},
-            .Byte => try writer.print("byte ", .{}),
-            .Word => try writer.print("word ", .{}),
+            .Byte => try writer.print(" byte", .{}),
+            .Word => try writer.print(" word", .{}),
         }
 
-        switch (to_format.dst) {
-            .register => |reg| try writer.print("{s}, ", .{std.enums.tagName(x8086.Register, reg).?}),
-            .memory => |mem| try writer.print("{s}, ", .{x8086Memory(mem)}),
-        }
+        if (to_format.src) |src| {
+            switch (to_format.dst) {
+                .register => |reg| try writer.print(" {s},", .{std.enums.tagName(x8086.Register, reg).?}),
+                .memory => |mem| try writer.print(" {s},", .{x8086Memory(mem)}),
+                .jump => unreachable,
+            }
 
-        switch (to_format.src) {
-            .register => |reg| try writer.print("{s}", .{std.enums.tagName(x8086.Register, reg).?}),
-            .immediate => |i| try writer.print("{s}", .{x8086Immediate(i)}),
-            .memory => |mem| try writer.print("{s}", .{x8086Memory(mem)}),
+            switch (src) {
+                .register => |reg| try writer.print(" {s}", .{std.enums.tagName(x8086.Register, reg).?}),
+                .immediate => |i| try writer.print(" {s}", .{x8086Immediate(i)}),
+                .memory => |mem| try writer.print(" {s}", .{x8086Memory(mem)}),
+            }
+        } else {
+            switch (to_format.dst) {
+                .jump => |jump| try writer.print(" {s}", .{x8086JumpDestination(jump)}),
+                .register => unreachable,
+                .memory => unreachable,
+            }
         }
     }
 };
@@ -137,6 +177,10 @@ pub fn x8086Immediate(to_format: x8086.ImmediateField) std.fmt.Formatter(asmForm
 }
 
 pub fn x8086Instruction(to_format: x8086.Instruction) std.fmt.Formatter(asmFormatter.instruction) {
+    return .{ .data = to_format };
+}
+
+pub fn x8086JumpDestination(to_format: x8086.JumpDestination) std.fmt.Formatter(asmFormatter.jumpDestination) {
     return .{ .data = to_format };
 }
 
@@ -157,9 +201,14 @@ fn getExplicitSizeSpecifier(instruction: x8086.Instruction) SizeSpecifier {
         return .None;
     }
 
+    if (instruction.src == null) {
+        // Its a jump
+        return .None;
+    }
+
     // If destination is memory, check the source. If the source is an immediate,
     // we need to check if the size is ambiguous.
-    const src_is_immediate = switch (instruction.src) {
+    const src_is_immediate = switch (instruction.src.?) {
         .immediate => true,
         else => false,
     };
