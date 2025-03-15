@@ -106,6 +106,31 @@ test "encode->decode with ASM diff" {
     try testEncodeDecodeWithAsmDiff("cmp ax, 1000");
     try testEncodeDecodeWithAsmDiff("cmp al, 226");
     try testEncodeDecodeWithAsmDiff("cmp al, 9");
+
+    try testEncodeDecodeWithAsmDiff("jne $+4+0");
+    try testEncodeDecodeWithAsmDiff("jne $-2+0");
+    try testEncodeDecodeWithAsmDiff("jne $-4+0");
+    try testEncodeDecodeWithAsmDiff("jne $-2+0");
+    try testEncodeDecodeWithAsmDiff("je $+0");
+    try testEncodeDecodeWithAsmDiff("jl $-2+0");
+    try testEncodeDecodeWithAsmDiff("jle $-4+0");
+    try testEncodeDecodeWithAsmDiff("jb $-6+0");
+    try testEncodeDecodeWithAsmDiff("jbe $-8+0");
+    try testEncodeDecodeWithAsmDiff("jp $-10+0");
+    try testEncodeDecodeWithAsmDiff("jo $-12+0");
+    try testEncodeDecodeWithAsmDiff("js $-14+0");
+    try testEncodeDecodeWithAsmDiff("jne $-16+0");
+    try testEncodeDecodeWithAsmDiff("jnl $-18+0");
+    try testEncodeDecodeWithAsmDiff("jnle $-20+0");
+    try testEncodeDecodeWithAsmDiff("jnb $-22+0");
+    try testEncodeDecodeWithAsmDiff("jnbe $-24+0");
+    try testEncodeDecodeWithAsmDiff("jnp $-26+0");
+    try testEncodeDecodeWithAsmDiff("jno $-28+0");
+    try testEncodeDecodeWithAsmDiff("jns $-30+0");
+    try testEncodeDecodeWithAsmDiff("loop $-32+0");
+    try testEncodeDecodeWithAsmDiff("loopz $-34+0");
+    try testEncodeDecodeWithAsmDiff("loopnz $-36+0");
+    try testEncodeDecodeWithAsmDiff("jcxz $-38+0");
 }
 
 test "Homework" {

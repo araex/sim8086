@@ -33,6 +33,10 @@ pub const Opcode = enum {
     jnl_jge,
     jle_jng,
     jnle_jg,
+    loopnz_loopne,
+    loopz_loope,
+    loop,
+    jcxz,
 };
 
 // http://ref.x86asm.net/coder32.html#xB8
@@ -261,10 +265,10 @@ const opcode_table = [256]Opcode{
     .Unknown,
     .Unknown,
     .Unknown,
-    .Unknown, // <- 0xE0
-    .Unknown,
-    .Unknown,
-    .Unknown,
+    .loopnz_loopne, // <- 0xE0
+    .loopz_loope,
+    .loop,
+    .jcxz,
     .Unknown,
     .Unknown,
     .Unknown,
@@ -424,6 +428,10 @@ test "decode" {
         .{ .in = .{ 0xB8, 0b0000000 }, .expected = .mov_imm_to_r },
         .{ .in = .{ 0xC6, 0b0000000 }, .expected = .mov_imm_to_rm },
         .{ .in = .{ 0xC7, 0b0000000 }, .expected = .mov_imm_to_rm },
+        .{ .in = .{ 0xE0, 0b0000000 }, .expected = .loopnz_loopne },
+        .{ .in = .{ 0xE1, 0b0000000 }, .expected = .loopz_loope },
+        .{ .in = .{ 0xE2, 0b0000000 }, .expected = .loop },
+        .{ .in = .{ 0xE3, 0b0000000 }, .expected = .jcxz },
     };
 
     for (test_cases) |case| {

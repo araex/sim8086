@@ -416,7 +416,27 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
             const immediate = try decodeImmediate(operates_on, byte_2, reader);
             return makeInstruction(op, operates_on, reg, immediate);
         },
-        .jo, .jno, .jb_jnae, .jnb_jae, .je_jz, .jne_jnz, .jbe_jna, .jnbe_ja, .js, .jns, .jp_jpe, .jnp_jpo, .jl_jnge, .jnl_jge, .jle_jng, .jnle_jg => {
+        .jo,
+        .jno,
+        .jb_jnae,
+        .jnb_jae,
+        .je_jz,
+        .jne_jnz,
+        .jbe_jna,
+        .jnbe_ja,
+        .js,
+        .jns,
+        .jp_jpe,
+        .jnp_jpo,
+        .jl_jnge,
+        .jnl_jge,
+        .jle_jng,
+        .jnle_jg,
+        .loopnz_loopne,
+        .loopz_loope,
+        .loop,
+        .jcxz,
+        => {
             const jump = decodeJumpDestination(byte_2);
             return makeInstruction(op, .Byte, jump, null);
         },

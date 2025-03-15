@@ -85,12 +85,17 @@ const asmFormatter = struct {
         _: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
-        if (jump.increment > (0 - 2)) {
-            try writer.print("$+{d}+0", .{jump.increment});
-        } else if (jump.increment == 0) {
+        // nasm can assemble relative offset with $+ syntax.
+        // jumps are relative to next instruction, so +2 in
+        // our case. $+0 generates a -2 constant to compensate
+        // for that.
+        // See https://www.computerenhance.com/p/opcode-patterns-in-8086-arithmetic/comment/13475922
+        if ((jump.increment + 2) > 0) {
+            try writer.print("$+{d}+0", .{jump.increment + 2});
+        } else if ((jump.increment + 2) == 0) {
             try writer.print("$+0", .{});
         } else {
-            try writer.print("${d}+0", .{jump.increment});
+            try writer.print("${d}+0", .{jump.increment + 2});
         }
     }
 
@@ -135,6 +140,10 @@ const asmFormatter = struct {
             .jnl_jge => "jnl",
             .jle_jng => "jle",
             .jnle_jg => "jnle",
+            .loopnz_loopne => "loopnz",
+            .loopz_loope => "loopz",
+            .loop => "loop",
+            .jcxz => "jcxz",
             .Unknown => "<unknown>",
         };
 
