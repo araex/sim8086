@@ -14,14 +14,16 @@ pub const Mnemonic = enum {
     sub_rm_and_r_to_either,
     sub_imm_to_rm,
     sub_imm_to_acc,
+    cmp_rm_with_r,
+    cmp_imm_with_rm,
+    cmp_imm_with_acc,
     // cmp
     // jumps
 };
 
 // http://ref.x86asm.net/coder32.html#xB8
 const opcode_table = [256]Mnemonic{
-    // 0x00
-    .add_rm_with_r_to_either,
+    .add_rm_with_r_to_either, // <- 0x00
     .add_rm_with_r_to_either,
     .add_rm_with_r_to_either,
     .add_rm_with_r_to_either,
@@ -29,6 +31,7 @@ const opcode_table = [256]Mnemonic{
     .add_imm_to_acc,
     .Unknown,
     .Unknown,
+    .Unknown, // <- 0x08
     .Unknown,
     .Unknown,
     .Unknown,
@@ -36,9 +39,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
-    .Unknown,
-    // 0x0F
-    .Unknown,
+    .Unknown, // <- 0x10
     .Unknown,
     .Unknown,
     .Unknown,
@@ -46,6 +47,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
+    .Unknown, // <- 0x18
     .Unknown,
     .Unknown,
     .Unknown,
@@ -53,9 +55,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
-    .Unknown,
-    // 0x1F
-    .Unknown,
+    .Unknown, // <- 0x20
     .Unknown,
     .Unknown,
     .Unknown,
@@ -63,7 +63,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
-    .sub_rm_and_r_to_either,
+    .sub_rm_and_r_to_either, // <-0x28
     .sub_rm_and_r_to_either,
     .sub_rm_and_r_to_either,
     .sub_rm_and_r_to_either,
@@ -71,7 +71,7 @@ const opcode_table = [256]Mnemonic{
     .sub_imm_to_acc,
     .Unknown,
     .Unknown,
-    // 0x2F
+    .Unknown, // <- 0x30
     .Unknown,
     .Unknown,
     .Unknown,
@@ -79,8 +79,15 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
+    .cmp_rm_with_r, // <- 0x38
+    .cmp_rm_with_r,
+    .cmp_rm_with_r,
+    .cmp_rm_with_r,
+    .cmp_imm_with_acc,
+    .cmp_imm_with_acc,
     .Unknown,
     .Unknown,
+    .Unknown, // <- 0x40
     .Unknown,
     .Unknown,
     .Unknown,
@@ -88,7 +95,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
-    // 0x3F
+    .Unknown, // <- 0x48
     .Unknown,
     .Unknown,
     .Unknown,
@@ -96,6 +103,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
+    .Unknown, // <- 0x50
     .Unknown,
     .Unknown,
     .Unknown,
@@ -103,14 +111,15 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
+    .Unknown, // <- 0x58
     .Unknown,
     .Unknown,
-    // 0x4F
     .Unknown,
     .Unknown,
     .Unknown,
     .Unknown,
     .Unknown,
+    .Unknown, // <- 0x60
     .Unknown,
     .Unknown,
     .Unknown,
@@ -118,14 +127,15 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
+    .Unknown, // <- 0x68
     .Unknown,
     .Unknown,
     .Unknown,
     .Unknown,
-    // 0x5F
     .Unknown,
     .Unknown,
     .Unknown,
+    .Unknown, // <- 0x70
     .Unknown,
     .Unknown,
     .Unknown,
@@ -133,39 +143,23 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
+    .Unknown, // <- 0x78
     .Unknown,
     .Unknown,
     .Unknown,
     .Unknown,
     .Unknown,
     .Unknown,
-    // 0x6F
     .Unknown,
+    .Unknown, // <- 0x80: needs opcode extension
+    .Unknown, // <- 0x81: needs opcode extension
+    .Unknown, // <- 0x82: needs opcode extension
+    .Unknown, // <- 0x83: needs opcode extension
     .Unknown,
     .Unknown,
     .Unknown,
     .Unknown,
-    .Unknown,
-    .Unknown,
-    .Unknown,
-    .Unknown,
-    .Unknown,
-    .Unknown,
-    .Unknown,
-    .Unknown,
-    .Unknown,
-    .Unknown,
-    .Unknown,
-    // 0x7F
-    .Unknown, // 0x80: needs opcode extension
-    .Unknown, // 0x81: needs opcode extension
-    .Unknown, // 0x82: needs opcode extension
-    .Unknown, // 0x83: needs opcode extension
-    .Unknown,
-    .Unknown,
-    .Unknown,
-    .Unknown,
-    .mov_rm_to_from_r,
+    .mov_rm_to_from_r, // <- 0x88
     .mov_rm_to_from_r,
     .mov_rm_to_from_r,
     .mov_rm_to_from_r,
@@ -173,7 +167,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
-    // 0x8F
+    .Unknown, // <- 0x90
     .Unknown,
     .Unknown,
     .Unknown,
@@ -181,6 +175,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
+    .Unknown, // <- 0x98
     .Unknown,
     .Unknown,
     .Unknown,
@@ -188,10 +183,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
-    .Unknown,
-    .Unknown,
-    // 0x9F
-    .mov_mem_to_accumulator,
+    .mov_mem_to_accumulator, // <- 0xA0
     .mov_mem_to_accumulator,
     .mov_accumulator_to_mem,
     .mov_accumulator_to_mem,
@@ -199,6 +191,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
+    .Unknown, // <- 0xA8
     .Unknown,
     .Unknown,
     .Unknown,
@@ -206,8 +199,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
-    .Unknown,
-    // 0xAF
+    .mov_imm_to_r, // <- 0xB0
     .mov_imm_to_r,
     .mov_imm_to_r,
     .mov_imm_to_r,
@@ -215,6 +207,7 @@ const opcode_table = [256]Mnemonic{
     .mov_imm_to_r,
     .mov_imm_to_r,
     .mov_imm_to_r,
+    .mov_imm_to_r, // <- 0xB8
     .mov_imm_to_r,
     .mov_imm_to_r,
     .mov_imm_to_r,
@@ -222,10 +215,7 @@ const opcode_table = [256]Mnemonic{
     .mov_imm_to_r,
     .mov_imm_to_r,
     .mov_imm_to_r,
-    .mov_imm_to_r,
-    .mov_imm_to_r,
-    // 0xBF
-    .Unknown,
+    .Unknown, // <- 0xC0
     .Unknown,
     .Unknown,
     .Unknown,
@@ -233,6 +223,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .mov_imm_to_rm,
     .mov_imm_to_rm,
+    .Unknown, // <- 0xC8
     .Unknown,
     .Unknown,
     .Unknown,
@@ -240,9 +231,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
-    .Unknown,
-    // 0xCF
-    .Unknown,
+    .Unknown, // <- 0xD0
     .Unknown,
     .Unknown,
     .Unknown,
@@ -250,6 +239,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
+    .Unknown, // <- 0xD8
     .Unknown,
     .Unknown,
     .Unknown,
@@ -257,9 +247,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
-    .Unknown,
-    // 0xDF
-    .Unknown,
+    .Unknown, // <- 0xE0
     .Unknown,
     .Unknown,
     .Unknown,
@@ -267,6 +255,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
+    .Unknown, // <- 0xE8
     .Unknown,
     .Unknown,
     .Unknown,
@@ -274,9 +263,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
-    .Unknown,
-    // 0xEF
-    .Unknown,
+    .Unknown, // <- 0xF0
     .Unknown,
     .Unknown,
     .Unknown,
@@ -284,7 +271,7 @@ const opcode_table = [256]Mnemonic{
     .Unknown,
     .Unknown,
     .Unknown,
-    .Unknown,
+    .Unknown, // <- 0xF8
     .Unknown,
     .Unknown,
     .Unknown,
@@ -302,7 +289,7 @@ const opcode_extension_table_0x80 = [_]Mnemonic{
     .Unknown,
     .sub_imm_to_rm,
     .Unknown,
-    .Unknown,
+    .cmp_imm_with_rm,
 };
 const opcode_extension_table_0x81 = [_]Mnemonic{
     .add_imm_to_rm,
@@ -312,7 +299,7 @@ const opcode_extension_table_0x81 = [_]Mnemonic{
     .Unknown,
     .sub_imm_to_rm,
     .Unknown,
-    .Unknown,
+    .cmp_imm_with_rm,
 };
 const opcode_extension_table_0x82 = [_]Mnemonic{
     .add_imm_to_rm,
@@ -322,7 +309,7 @@ const opcode_extension_table_0x82 = [_]Mnemonic{
     .Unknown,
     .sub_imm_to_rm,
     .Unknown,
-    .Unknown,
+    .cmp_imm_with_rm,
 };
 const opcode_extension_table_0x83 = [_]Mnemonic{
     .add_imm_to_rm,
@@ -332,7 +319,7 @@ const opcode_extension_table_0x83 = [_]Mnemonic{
     .Unknown,
     .sub_imm_to_rm,
     .Unknown,
-    .Unknown,
+    .cmp_imm_with_rm,
 };
 
 fn hasOpcodeExtension(byte: u8) bool {
@@ -375,14 +362,24 @@ test "decode" {
         .{ .in = .{ 0x2B, 0b0000000 }, .expected = .sub_rm_and_r_to_either },
         .{ .in = .{ 0x2C, 0b0000000 }, .expected = .sub_imm_to_acc },
         .{ .in = .{ 0x2D, 0b0000000 }, .expected = .sub_imm_to_acc },
+        .{ .in = .{ 0x38, 0b0000000 }, .expected = .cmp_rm_with_r },
+        .{ .in = .{ 0x39, 0b0000000 }, .expected = .cmp_rm_with_r },
+        .{ .in = .{ 0x3A, 0b0000000 }, .expected = .cmp_rm_with_r },
+        .{ .in = .{ 0x3B, 0b0000000 }, .expected = .cmp_rm_with_r },
+        .{ .in = .{ 0x3C, 0b0000000 }, .expected = .cmp_imm_with_acc },
+        .{ .in = .{ 0x3D, 0b0000000 }, .expected = .cmp_imm_with_acc },
         .{ .in = .{ 0x80, 0b0000000 }, .expected = .add_imm_to_rm },
-        .{ .in = .{ 0x80, 0b00101000 }, .expected = .sub_imm_to_rm },
+        .{ .in = .{ 0x80, 0b0101000 }, .expected = .sub_imm_to_rm },
+        .{ .in = .{ 0x80, 0b0111000 }, .expected = .cmp_imm_with_rm },
         .{ .in = .{ 0x81, 0b0000000 }, .expected = .add_imm_to_rm },
-        .{ .in = .{ 0x81, 0b00101000 }, .expected = .sub_imm_to_rm },
+        .{ .in = .{ 0x81, 0b0101000 }, .expected = .sub_imm_to_rm },
+        .{ .in = .{ 0x81, 0b0111000 }, .expected = .cmp_imm_with_rm },
         .{ .in = .{ 0x82, 0b0000000 }, .expected = .add_imm_to_rm },
-        .{ .in = .{ 0x82, 0b00101000 }, .expected = .sub_imm_to_rm },
+        .{ .in = .{ 0x82, 0b0101000 }, .expected = .sub_imm_to_rm },
+        .{ .in = .{ 0x82, 0b0111000 }, .expected = .cmp_imm_with_rm },
         .{ .in = .{ 0x83, 0b0000000 }, .expected = .add_imm_to_rm },
-        .{ .in = .{ 0x83, 0b00101000 }, .expected = .sub_imm_to_rm },
+        .{ .in = .{ 0x83, 0b0101000 }, .expected = .sub_imm_to_rm },
+        .{ .in = .{ 0x83, 0b0111000 }, .expected = .cmp_imm_with_rm },
         .{ .in = .{ 0x88, 0b0000000 }, .expected = .mov_rm_to_from_r },
         .{ .in = .{ 0x89, 0b0000000 }, .expected = .mov_rm_to_from_r },
         .{ .in = .{ 0x8A, 0b0000000 }, .expected = .mov_rm_to_from_r },

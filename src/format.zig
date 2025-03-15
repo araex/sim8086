@@ -100,6 +100,10 @@ const asmFormatter = struct {
             .sub_imm_to_rm,
             .sub_rm_and_r_to_either,
             => "sub",
+            .cmp_imm_with_acc,
+            .cmp_imm_with_rm,
+            .cmp_rm_with_r,
+            => "cmp",
             .Unknown => "<unknown>",
         };
 

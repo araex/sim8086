@@ -316,6 +316,7 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
     switch (op) {
         .add_rm_with_r_to_either,
         .sub_rm_and_r_to_either,
+        .cmp_rm_with_r,
         .mov_rm_to_from_r,
         => {
             const operates_on = decodeOperatesOn(0b00000001, byte_1);
@@ -370,6 +371,7 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
         },
         .add_imm_to_rm,
         .sub_imm_to_rm,
+        .cmp_imm_with_rm,
         => {
             const operates_on = decodeOperatesOn(0b00000001, byte_1);
             const sign_extension = (byte_1 & 0b00000010) != 0;
@@ -387,6 +389,7 @@ fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
         },
         .add_imm_to_acc,
         .sub_imm_to_acc,
+        .cmp_imm_with_acc,
         => {
             const operates_on = decodeOperatesOn(0b00000001, byte_1);
             const reg = if (operates_on == OperatesOn.Byte) Register.AL else Register.AX;

@@ -81,6 +81,31 @@ test "individual instructions" {
     try testEncodeDecode("sub ax, 1000");
     try testEncodeDecode("sub al, 226");
     try testEncodeDecode("sub al, 9");
+
+    try testEncodeDecode("cmp bx, [bx + si]");
+    try testEncodeDecode("cmp bx, [bp]");
+    try testEncodeDecode("cmp si, 2");
+    try testEncodeDecode("cmp bp, 2");
+    try testEncodeDecode("cmp cx, 8");
+    try testEncodeDecode("cmp bx, [bp]");
+    try testEncodeDecode("cmp cx, [bx + 2]");
+    try testEncodeDecode("cmp bh, [bp + si + 4]");
+    try testEncodeDecode("cmp di, [bp + di + 6]");
+    try testEncodeDecode("cmp [bx + si], bx");
+    try testEncodeDecode("cmp [bp], bx");
+    try testEncodeDecode("cmp [bp], bx");
+    try testEncodeDecode("cmp [bx + 2], cx");
+    try testEncodeDecode("cmp [bp + si + 4], bh");
+    try testEncodeDecode("cmp [bp + di + 6], di");
+    try testEncodeDecode("cmp byte [bx], 34");
+    try testEncodeDecode("cmp word [4834], 29");
+    try testEncodeDecode("cmp ax, [bp]");
+    try testEncodeDecode("cmp al, [bx + si]");
+    try testEncodeDecode("cmp ax, bx");
+    try testEncodeDecode("cmp al, ah");
+    try testEncodeDecode("cmp ax, 1000");
+    try testEncodeDecode("cmp al, 226");
+    try testEncodeDecode("cmp al, 9");
 }
 
 test "Homework" {
