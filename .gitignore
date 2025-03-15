@@ -1,4 +1,5 @@
 .zig-cache
 bin
 build
+nasm-out
 zig-out

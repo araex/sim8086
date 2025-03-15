@@ -1,24 +1,34 @@
 const std = @import("std");
-const x8086 = @import("x8086.zig");
-const opcode = @import("opcode.zig");
+
+const ImmediateField = @import("operands.zig").ImmediateField;
+const instructions = @import("instruction.zig");
+const JumpDestination = @import("operands.zig").JumpDestination;
+const Memory = @import("operands.zig").Memory;
+const Register = @import("operands.zig").Register;
+
+pub fn fmt(to_format: instructions.Instruction) std.fmt.Formatter(asmFormatter.instruction) {
+    return .{ .data = to_format };
+}
 
 const asmFormatter = struct {
+    const EffectiveAddressCalculation = @import("fields.zig").EffectiveAddressCalculation;
+
     fn memory(
-        mem: x8086.Memory,
+        mem: Memory,
         comptime _: []const u8,
         _: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
         const str = switch (mem.calc) {
-            x8086.EffectiveAddressCalculation.BX_PLUS_SI => "bx + si",
-            x8086.EffectiveAddressCalculation.BX_PLUS_DI => "bx + di",
-            x8086.EffectiveAddressCalculation.BP_PLUS_SI => "bp + si",
-            x8086.EffectiveAddressCalculation.BP_PLUS_DI => "bp + di",
-            x8086.EffectiveAddressCalculation.SI => "si",
-            x8086.EffectiveAddressCalculation.DI => "di",
-            x8086.EffectiveAddressCalculation.BP => "bp",
-            x8086.EffectiveAddressCalculation.DIRECT_ADDRESS => "",
-            x8086.EffectiveAddressCalculation.BX => "bx",
+            EffectiveAddressCalculation.BX_PLUS_SI => "bx + si",
+            EffectiveAddressCalculation.BX_PLUS_DI => "bx + di",
+            EffectiveAddressCalculation.BP_PLUS_SI => "bp + si",
+            EffectiveAddressCalculation.BP_PLUS_DI => "bp + di",
+            EffectiveAddressCalculation.SI => "si",
+            EffectiveAddressCalculation.DI => "di",
+            EffectiveAddressCalculation.BP => "bp",
+            EffectiveAddressCalculation.DIRECT_ADDRESS => "",
+            EffectiveAddressCalculation.BX => "bx",
         };
 
         if (mem.displacement) |d| {
@@ -42,7 +52,7 @@ const asmFormatter = struct {
                     }
                 },
                 .word => |w| {
-                    if (mem.calc == x8086.EffectiveAddressCalculation.DIRECT_ADDRESS) {
+                    if (mem.calc == EffectiveAddressCalculation.DIRECT_ADDRESS) {
                         try writer.print("[{d}]", .{w});
                         return;
                     } else if (w == 0) {
@@ -64,7 +74,7 @@ const asmFormatter = struct {
     }
 
     fn immediateField(
-        field: x8086.ImmediateField,
+        field: ImmediateField,
         comptime _: []const u8,
         _: std.fmt.FormatOptions,
         writer: anytype,
@@ -80,7 +90,7 @@ const asmFormatter = struct {
     }
 
     fn jumpDestination(
-        jump: x8086.JumpDestination,
+        jump: JumpDestination,
         comptime _: []const u8,
         _: std.fmt.FormatOptions,
         writer: anytype,
@@ -100,7 +110,7 @@ const asmFormatter = struct {
     }
 
     fn instruction(
-        to_format: x8086.Instruction,
+        to_format: instructions.Instruction,
         comptime _: []const u8,
         _: std.fmt.FormatOptions,
         writer: anytype,
@@ -157,19 +167,19 @@ const asmFormatter = struct {
 
         if (to_format.src) |src| {
             switch (to_format.dst) {
-                .register => |reg| try writer.print(" {s},", .{std.enums.tagName(x8086.Register, reg).?}),
-                .memory => |mem| try writer.print(" {s},", .{x8086Memory(mem)}),
+                .register => |reg| try writer.print(" {s},", .{std.enums.tagName(Register, reg).?}),
+                .memory => |mem| try writer.print(" {s},", .{fmtMemory(mem)}),
                 .jump => unreachable,
             }
 
             switch (src) {
-                .register => |reg| try writer.print(" {s}", .{std.enums.tagName(x8086.Register, reg).?}),
-                .immediate => |i| try writer.print(" {s}", .{x8086Immediate(i)}),
-                .memory => |mem| try writer.print(" {s}", .{x8086Memory(mem)}),
+                .register => |reg| try writer.print(" {s}", .{std.enums.tagName(Register, reg).?}),
+                .immediate => |i| try writer.print(" {s}", .{fmtImmediate(i)}),
+                .memory => |mem| try writer.print(" {s}", .{fmtMemory(mem)}),
             }
         } else {
             switch (to_format.dst) {
-                .jump => |jump| try writer.print(" {s}", .{x8086JumpDestination(jump)}),
+                .jump => |jump| try writer.print(" {s}", .{fmtJumpDestination(jump)}),
                 .register => unreachable,
                 .memory => unreachable,
             }
@@ -177,19 +187,15 @@ const asmFormatter = struct {
     }
 };
 
-pub fn x8086Memory(to_format: x8086.Memory) std.fmt.Formatter(asmFormatter.memory) {
+fn fmtMemory(to_format: Memory) std.fmt.Formatter(asmFormatter.memory) {
     return .{ .data = to_format };
 }
 
-pub fn x8086Immediate(to_format: x8086.ImmediateField) std.fmt.Formatter(asmFormatter.immediateField) {
+fn fmtImmediate(to_format: ImmediateField) std.fmt.Formatter(asmFormatter.immediateField) {
     return .{ .data = to_format };
 }
 
-pub fn x8086Instruction(to_format: x8086.Instruction) std.fmt.Formatter(asmFormatter.instruction) {
-    return .{ .data = to_format };
-}
-
-pub fn x8086JumpDestination(to_format: x8086.JumpDestination) std.fmt.Formatter(asmFormatter.jumpDestination) {
+fn fmtJumpDestination(to_format: JumpDestination) std.fmt.Formatter(asmFormatter.jumpDestination) {
     return .{ .data = to_format };
 }
 
@@ -199,7 +205,7 @@ const SizeSpecifier = enum {
     Word,
 };
 
-fn getExplicitSizeSpecifier(instruction: x8086.Instruction) SizeSpecifier {
+fn getExplicitSizeSpecifier(instruction: instructions.Instruction) SizeSpecifier {
     // Check if the destination is a memory operand.
     const dst_is_memory = switch (instruction.dst) {
         .memory => true,
@@ -231,16 +237,4 @@ fn getExplicitSizeSpecifier(instruction: x8086.Instruction) SizeSpecifier {
         .Word => return .Word,
     }
     return .None;
-}
-
-pub fn toAsm(alloc: std.mem.Allocator, instructions: []const x8086.Instruction) !std.ArrayList(u8) {
-    var result = std.ArrayList(u8).init(alloc);
-    try result.appendSlice("bits 16\n");
-
-    var lineBuffer: [1024]u8 = undefined;
-    for (instructions) |instruction| {
-        const instruction_string = try std.fmt.bufPrint(&lineBuffer, "{}\n", .{x8086Instruction(instruction)});
-        try result.appendSlice(std.ascii.lowerString(instruction_string, instruction_string));
-    }
-    return result;
 }
