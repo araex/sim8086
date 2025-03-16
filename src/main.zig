@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const app = @import("app.zig");
 const logger = @import("logger.zig");
 const x86 = @import("x86.zig");
 
@@ -19,56 +20,30 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(alloc);
     defer std.process.argsFree(alloc, args);
 
-    if (args.len < 2) {
-        std.log.err("Usage: {s} <input_file_path>", .{args[0]});
-        std.process.exit(1);
+    if (args.len != 2) {
+        std.log.err("Expected exactly one argument: path to x8086 machine code file", .{});
+        return;
     }
 
     const file_path = args[1];
-    std.log.debug("reading '{s}'", .{file_path});
     const file_content = try readFile(alloc, file_path);
     defer alloc.free(file_content);
 
-    // decode
-    const decode_start = std.time.nanoTimestamp();
     const decoded = try x86.decode(alloc, file_content);
-    const decode_end = std.time.nanoTimestamp();
-    const decode_time_ns = decode_end - decode_start;
-    std.log.info("decoded {d} bytes in {d:.3} ms", .{
-        file_content.len,
-        @as(f64, @floatFromInt(decode_time_ns)) / 1_000_000.0,
-    });
     defer decoded.deinit();
+    std.log.info("Decoded '{d}' bytes from '{s}'", .{ file_content.len, file_path });
 
-    // output to asm
-    var out = std.io.bufferedWriter(std.io.getStdOut().writer());
-    std.log.debug("output ASM", .{});
-    const asm_start = std.time.nanoTimestamp();
-    for (decoded.items) |instruction| {
-        try std.fmt.format(out.writer(), "{}\n", .{x86.fmt(instruction)});
-    }
-    const asm_end = std.time.nanoTimestamp();
-    try out.flush();
-    const asm_time_ns = asm_end - asm_start;
-    std.log.info("generated ASM for {d} instructions in {d:.3} ms", .{
-        decoded.items.len,
-        @as(f64, @floatFromInt(asm_time_ns)) / 1_000_000.0,
-    });
-    std.log.debug("done", .{});
+    try app.run(alloc, decoded.items);
 }
 
-fn readFile(allocator: std.mem.Allocator, file_path: []const u8) ![]const u8 {
-    const file = try std.fs.cwd().openFile(file_path, .{});
-    defer file.close();
-
-    const file_size = try file.getEndPos();
-    const buffer = try allocator.alloc(u8, file_size);
-    errdefer allocator.free(buffer);
-
-    const bytes_read = try file.readAll(buffer);
-    if (bytes_read != file_size) {
-        return error.IncompleteRead;
-    }
-
-    return buffer;
+fn readFile(alloc: std.mem.Allocator, file_path: []u8) ![]u8 {
+    const max_file_size = 1024 * 1024;
+    return std.fs.cwd().readFileAlloc(
+        alloc,
+        file_path,
+        max_file_size,
+    ) catch |err| {
+        std.log.err("openFile('{s}'): {}", .{ file_path, err });
+        return err;
+    };
 }

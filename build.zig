@@ -4,19 +4,19 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // 3rd party dependencies
+    const dvui_dep = b.dependency("dvui", .{
+        .target = target,
+        .optimize = optimize,
+        .sdl3 = true,
+    });
+
     // Library modules
     const x86_module = b.createModule(.{
         .root_source_file = b.path("src/x86.zig"),
         .target = target,
         .optimize = optimize,
     });
-
-    const app_module = b.createModule(.{
-        .root_source_file = b.path("src/app.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    app_module.addImport("x86", x86_module);
 
     // Exe modules
     const main_module = b.createModule(.{
@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     main_module.addImport("x86", x86_module);
-    main_module.addImport("x86", app_module);
+    main_module.addImport("dvui", dvui_dep.module("dvui_sdl"));
 
     const test_module = b.createModule(.{
         .root_source_file = b.path("src/tests.zig"),
@@ -34,17 +34,15 @@ pub fn build(b: *std.Build) void {
     });
     test_module.addImport("x86", x86_module);
 
-    // Main executable
+    // main exe
     const main_exe = b.addExecutable(.{
         .name = "sim8086",
         .root_module = main_module,
     });
-    const no_bin = b.option(bool, "no-bin", "skip emitting binary") orelse false;
-    if (no_bin) {
-        b.getInstallStep().dependOn(&main_exe.step);
-    } else {
-        b.installArtifact(main_exe);
-    }
+
+    // install exe
+    const install_exe = b.addInstallArtifact(main_exe, .{});
+    b.getInstallStep().dependOn(&install_exe.step);
     addCheckStep(b, main_module);
 
     // run: main
@@ -52,7 +50,7 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| {
         main_cmd.addArgs(args);
     }
-    main_cmd.step.dependOn(b.getInstallStep());
+    main_cmd.step.dependOn(&install_exe.step);
     const main_step = b.step("sim8086", "Run the app");
     main_step.dependOn(&main_cmd.step);
 
@@ -66,7 +64,7 @@ pub fn build(b: *std.Build) void {
 
 fn addCheckStep(b: *std.Build, module: ?*std.Build.Module) void {
     const exe_check = b.addExecutable(.{
-        .name = "compile-check",
+        .name = "check",
         .root_module = module,
     });
     const check = b.step("check", "Check if main compiles");

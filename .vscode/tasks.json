@@ -1,36 +1,11 @@
 {
     "version": "2.0.0",
     "tasks": [
-        // {
-        //     "label": "compile loop",
-        //     "type": "shell",
-        //     "command": "zig build check -Dno-bin -fincremental --watch",
-        //     "isBackground": true,
-        //     "problemMatcher": [],
-        //     "group": {
-        //         "kind": "build",
-        //         "isDefault": true
-        //     },
-        //     "options": {
-        //         "statusbar": {
-        //             "hide" : true
-        //         }
-        //     }
-        // },
         {
-            "label": "run sim8086 with args",
+            "label": "run sim8086",
             "type": "shell",
-            "command": "zig build sim8086 -- ${input:inputFilePath}",
-            "group": "build",
-            "presentation": {
-                "reveal": "always",
-                "panel": "shared"
-            }
-        },
-        {
-            "label": "run sim8086 data/0037",
-            "type": "shell",
-            "command": "zig build sim8086 -- .\\src\\data\\listing_0037_single_register_mov",
+            "command": "zig",
+            "args": ["build", "sim8086", "--", "${input:sim8086Arg}"],
             "group": "build",
             "presentation": {
                 "reveal": "always",
@@ -46,14 +21,14 @@
                 "reveal": "always",
                 "panel": "dedicated"
             }
-        },
+        }
     ],
     "inputs": [
         {
-            "id": "inputFilePath",
+            "id": "sim8086Arg",
             "type": "promptString",
-            "default": ".\\src\\data\\listing_0037_single_register_mov",
-            "description": "Input file path"
+            "description": "Enter the argument for sim8086",
+            "default": "${workspaceFolder}/src/data/listing_0038_many_register_mov"
         }
     ]
 }
