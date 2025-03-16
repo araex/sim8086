@@ -22,6 +22,40 @@ pub const SrcType = union(SrcTypeTag) {
     register: Register,
     immediate: ImmediateField,
     memory: Memory,
+
+    pub fn as(self: SrcType, t: type) !t {
+        switch (t) {
+            u8, u16 => {
+                const imm = try self.asImmediateField();
+                return imm.as(t);
+            },
+            ImmediateField => return self.asImmediateField(),
+            Register => return self.asRegister(),
+            Memory => return self.asMemory(),
+            else => return error.InvalidAcces,
+        }
+    }
+
+    fn asImmediateField(self: SrcType) !ImmediateField {
+        switch (self) {
+            .immediate => |imm| return imm,
+            else => return error.InvalidAcces,
+        }
+    }
+
+    fn asRegister(self: SrcType) !Register {
+        switch (self) {
+            .register => |r| return r,
+            else => return error.InvalidAcces,
+        }
+    }
+
+    fn asMemory(self: SrcType) !Memory {
+        switch (self) {
+            .memory => |m| return m,
+            else => return error.InvalidAcces,
+        }
+    }
 };
 
 pub fn makeSrc(val: anytype) ?SrcType {
@@ -123,6 +157,24 @@ pub const ImmediateValue = union(ImmediateValueTag) {
 
 pub const ImmediateField = struct {
     value: ImmediateValue,
+
+    pub fn as(self: ImmediateField, t: type) !t {
+        switch (t) {
+            u8 => {
+                switch (self.value) {
+                    .byte => |b| return b,
+                    .word => |w| return @intCast(w),
+                }
+            },
+            u16 => {
+                switch (self.value) {
+                    .byte => |b| return @as(u16, b),
+                    .word => |w| return w,
+                }
+            },
+            else => return error.UnsupportedType,
+        }
+    }
 };
 
 pub fn makeImmediate(val: anytype) ImmediateField {

@@ -11,6 +11,7 @@ pub const makeSrc = @import("x86/operands.zig").makeSrc;
 pub const makeImmediate = @import("x86/operands.zig").makeImmediate;
 pub const Register = @import("x86/operands.zig").Register;
 pub const Memory = @import("x86/operands.zig").Memory;
+pub const Simulator = @import("x86/simulator.zig").Simulator;
 
 pub fn decode(alloc: std.mem.Allocator, bin: []const u8) !std.ArrayList(Instruction) {
     var result = std.ArrayList(Instruction).init(alloc);

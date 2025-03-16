@@ -21,6 +21,29 @@
                 "reveal": "always",
                 "panel": "dedicated"
             }
+        },
+        {
+            "label": "debug sim8086",
+            "type": "shell",
+            "command": "..\\raddbg\\raddbg.exe",
+            "args": ["zig-out\\bin\\sim8086.exe", "${input:sim8086Arg}"],
+            "group": "build",
+            "dependsOn": ["build sim8086"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "build sim8086",
+            "type": "shell",
+            "command": "zig",
+            "args": ["build"],
+            "group": "build",
+            "presentation": {
+                "reveal": "never",
+                "panel": "shared"
+            }
         }
     ],
     "inputs": [
@@ -28,7 +51,7 @@
             "id": "sim8086Arg",
             "type": "promptString",
             "description": "Enter the argument for sim8086",
-            "default": "${workspaceFolder}/src/data/listing_0038_many_register_mov"
+            "default": "${workspaceFolder}/src/data/listing_0043_immediate_movs"
         }
     ]
 }

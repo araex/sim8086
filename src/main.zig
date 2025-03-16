@@ -33,7 +33,8 @@ pub fn main() !void {
     defer decoded.deinit();
     std.log.info("Decoded '{d}' bytes from '{s}'", .{ file_content.len, file_path });
 
-    try app.run(alloc, decoded.items);
+    var simulator = try x86.Simulator.init(decoded.items);
+    try app.run(alloc, &simulator);
 }
 
 fn readFile(alloc: std.mem.Allocator, file_path: []u8) ![]u8 {

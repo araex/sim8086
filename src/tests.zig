@@ -3,6 +3,7 @@ const std = @import("std");
 
 const nasm = @import("nasm.zig");
 const x86 = @import("x86.zig");
+const x86_SimRegisters = @import("x86/simulator.zig").Registers;
 
 test "Homework" {
     try testDecodeEncodeListing("listing_0037_single_register_mov");
@@ -335,11 +336,58 @@ test "encode->decode with ASM diff" {
     try testEncodeDecodeWithAsmDiff("jcxz $-38+0");
 }
 
+fn expectEqualRegisters(expected: x86_SimRegisters, actual: x86_SimRegisters) !void {
+    try std.testing.expectEqual(expected.getByte(.AL), actual.getByte(.AL));
+    try std.testing.expectEqual(expected.getByte(.AH), actual.getByte(.AH));
+    try std.testing.expectEqual(expected.getByte(.BL), actual.getByte(.BL));
+    try std.testing.expectEqual(expected.getByte(.BH), actual.getByte(.BH));
+    try std.testing.expectEqual(expected.getByte(.CL), actual.getByte(.CL));
+    try std.testing.expectEqual(expected.getByte(.CH), actual.getByte(.CH));
+    try std.testing.expectEqual(expected.getByte(.DL), actual.getByte(.DL));
+    try std.testing.expectEqual(expected.getByte(.DH), actual.getByte(.DH));
+
+    try std.testing.expectEqual(expected.getWord(.AX), actual.getWord(.AX));
+    try std.testing.expectEqual(expected.getWord(.BX), actual.getWord(.BX));
+    try std.testing.expectEqual(expected.getWord(.CX), actual.getWord(.CX));
+    try std.testing.expectEqual(expected.getWord(.DX), actual.getWord(.DX));
+    try std.testing.expectEqual(expected.getWord(.SP), actual.getWord(.SP));
+    try std.testing.expectEqual(expected.getWord(.BP), actual.getWord(.BP));
+    try std.testing.expectEqual(expected.getWord(.SI), actual.getWord(.SI));
+    try std.testing.expectEqual(expected.getWord(.DI), actual.getWord(.DI));
+}
+
+test "Simulator" {
+    const asm_instructions =
+        \\bits 16
+        \\mov al, 5
+        \\mov bx, 3
+    ;
+
+    const alloc = std.testing.allocator;
+    const file_name = getUniqueFileName(asm_instructions);
+    const bin = try runNasm(alloc, asm_instructions, file_name);
+    defer alloc.free(bin);
+
+    const instructions = try x86.decode(alloc, bin);
+    defer instructions.deinit();
+
+    var expected_registers = x86_SimRegisters{};
+    var sim = try x86.Simulator.init(instructions.items);
+    try std.testing.expectEqual(0, sim.cur_instruction);
+    try expectEqualRegisters(expected_registers, sim.registers);
+
+    expected_registers.setByte(.AL, 5);
+    try sim.step();
+    try expectEqualRegisters(expected_registers, sim.registers);
+
+    expected_registers.setWord(.BX, 3);
+    try sim.step();
+}
+
 fn testEncodeDecodeWithAsmDiff(comptime asm_instruction: [:0]const u8) !void {
     std.log.info("Encode->Decode '{s}'...", .{asm_instruction});
 
-    const hash = comptime std.hash.CityHash64.hash(asm_instruction);
-    const file_name = std.fmt.comptimePrint("{d}", .{hash});
+    const file_name = getUniqueFileName(asm_instruction);
 
     const prefix = "bits 16\n";
     const postfix = "\n";
@@ -407,6 +455,11 @@ fn testDecodeEncodeListing(comptime listing_file_name: []const u8) !void {
     };
 
     std.log.info("Success!\n", .{});
+}
+
+fn getUniqueFileName(comptime asm_instruction: [:0]const u8) []const u8 {
+    const hash = comptime std.hash.CityHash64.hash(asm_instruction);
+    return &std.fmt.comptimePrint("{d}", .{hash}).*;
 }
 
 fn withoutCommentsAndEmptyLines(
