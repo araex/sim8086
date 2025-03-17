@@ -15,6 +15,7 @@ pub const Simulator = @import("x86/simulator.zig").Simulator;
 
 pub fn decode(alloc: std.mem.Allocator, bin: []const u8) !std.ArrayList(Instruction) {
     var result = std.ArrayList(Instruction).init(alloc);
+    errdefer result.deinit();
     var stream = std.io.fixedBufferStream(bin);
     var reader = stream.reader().any();
     while (true) {
@@ -30,6 +31,7 @@ pub fn decode(alloc: std.mem.Allocator, bin: []const u8) !std.ArrayList(Instruct
 
 pub fn toAsm(alloc: std.mem.Allocator, insts: []const Instruction) !std.ArrayList(u8) {
     var result = std.ArrayList(u8).init(alloc);
+    errdefer result.deinit();
     try result.appendSlice("bits 16\n");
 
     var lineBuffer: [1024]u8 = undefined;

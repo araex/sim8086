@@ -17,7 +17,7 @@ const State = struct {
     // Disassembly of the instructions in the simulator
     instr_asm: []const []const u8,
 
-    // Pre-allocated strings for AX, BX, CX, DX, SP, BP, SI, DO. 4 byte each + 0 termination
+    // Pre-allocated strings for AX, BX, CX, DX, SP, BP, SI, DI. 4 byte each + 0 termination
     register_strings: [num_registers][:0]u8,
 
     ui_scale: f32,

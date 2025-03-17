@@ -8,6 +8,7 @@ const SrcType = @import("operands.zig").SrcType;
 
 const InstructionError = error{
     InvalidOperands,
+    MissingSrcOperand,
     NotImplemented,
 };
 
@@ -29,13 +30,30 @@ pub const Simulator = struct {
         const i = self.getCurrentInstruction();
         switch (i.op) {
             .mov_imm_to_r => {
-                const src = i.src orelse return InstructionError.InvalidOperands;
+                const src = i.src orelse return InstructionError.MissingSrcOperand;
                 switch (i.dst) {
                     .jump => return InstructionError.InvalidOperands,
                     .memory => return InstructionError.NotImplemented,
                     .register => |reg| switch (i.wide) {
                         .Byte => self.registers.setByte(reg, try src.as(u8)),
                         .Word => self.registers.setWord(reg, try src.as(u16)),
+                    },
+                }
+            },
+            .mov_rm_to_from_r => {
+                const src = i.src orelse return InstructionError.MissingSrcOperand;
+                switch (src) {
+                    .immediate => return InstructionError.InvalidOperands,
+                    .memory => return InstructionError.NotImplemented,
+                    .register => |reg_src| {
+                        switch (i.dst) {
+                            .jump => return InstructionError.InvalidOperands,
+                            .memory => return InstructionError.NotImplemented,
+                            .register => |reg_dst| switch (i.wide) {
+                                .Byte => self.registers.setByte(reg_dst, self.registers.getByte(reg_src)),
+                                .Word => self.registers.setWord(reg_dst, self.registers.getByte(reg_src)),
+                            },
+                        }
                     },
                 }
             },
@@ -88,7 +106,6 @@ pub const Registers = struct {
 
     // Set 8-bit register
     pub fn setByte(self: *Registers, dst: RegisterType, value: u8) void {
-        assert(isByteRegister(dst));
         switch (dst) {
             .AL => self.data[AX_OFFSET] = value,
             .AH => self.data[AX_OFFSET + 1] = value,
@@ -98,7 +115,14 @@ pub const Registers = struct {
             .CH => self.data[CX_OFFSET + 1] = value,
             .DL => self.data[DX_OFFSET] = value,
             .DH => self.data[DX_OFFSET + 1] = value,
-            else => unreachable,
+            .AX => self.data[AX_OFFSET] = value,
+            .BX => self.data[BX_OFFSET] = value,
+            .CX => self.data[CX_OFFSET] = value,
+            .DX => self.data[DX_OFFSET] = value,
+            .SP => self.data[SP_OFFSET] = value,
+            .BP => self.data[BP_OFFSET] = value,
+            .SI => self.data[SI_OFFSET] = value,
+            .DI => self.data[DI_OFFSET] = value,
         }
     }
 
@@ -147,7 +171,6 @@ pub const Registers = struct {
 
     // Get 8-bit register value
     pub fn getByte(self: *const Registers, reg: RegisterType) u8 {
-        assert(isByteRegister(reg));
         switch (reg) {
             .AL => return self.data[AX_OFFSET],
             .AH => return self.data[AX_OFFSET + 1],
@@ -157,7 +180,14 @@ pub const Registers = struct {
             .CH => return self.data[CX_OFFSET + 1],
             .DL => return self.data[DX_OFFSET],
             .DH => return self.data[DX_OFFSET + 1],
-            else => unreachable,
+            .AX => return self.data[AX_OFFSET],
+            .BX => return self.data[BX_OFFSET],
+            .CX => return self.data[CX_OFFSET],
+            .DX => return self.data[DX_OFFSET],
+            .SP => return self.data[SP_OFFSET],
+            .BP => return self.data[BP_OFFSET],
+            .SI => return self.data[SI_OFFSET],
+            .DI => return self.data[DI_OFFSET],
         }
     }
 
