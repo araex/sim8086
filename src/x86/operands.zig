@@ -143,7 +143,7 @@ pub const Memory = struct {
     displacement: ?Displacement,
 };
 
-pub const Register = enum { AL, CL, DL, BL, AH, CH, DH, BH, AX, CX, DX, BX, SP, BP, SI, DI };
+pub const Register = enum { AL, CL, DL, BL, AH, CH, DH, BH, AX, CX, DX, BX, SP, BP, SI, DI, ES, CS, SS, DS };
 
 pub const ImmediateValueTag = enum {
     byte,
@@ -209,6 +209,20 @@ pub fn decodeRegister(operates_on: OperatesOn, comptime mask_reg_bits: u8, byte:
         OperatesOn.Word => return @enumFromInt(@as(u8, reg_bits) + 8),
     }
     unreachable;
+}
+
+// Table 4-11: https://archive.org/details/bitsavers_intel80869lyUsersManualOct79_62967963/page/n258/mode/1up
+pub fn decodeSegmentRegister(comptime mask_reg_bits: u8, byte: u8) Register {
+    const num_bits = 2;
+    comptime std.debug.assert(isValidMask(mask_reg_bits, num_bits));
+    const required_shift: u2 = @intCast(@bitSizeOf(u8) - num_bits - @clz(mask_reg_bits));
+    const reg_bits: u2 = @intCast((byte & mask_reg_bits) >> required_shift);
+    switch (reg_bits) {
+        0b00 => return Register.ES,
+        0b01 => return Register.CS,
+        0b10 => return Register.SS,
+        0b11 => return Register.DS,
+    }
 }
 
 fn isWideRegister(reg: Register) bool {

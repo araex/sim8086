@@ -40,7 +40,10 @@ pub const Simulator = struct {
                     },
                 }
             },
-            .mov_rm_to_from_r => {
+            .mov_rm_to_from_r,
+            .mov_sr_to_rm,
+            .mov_rm_to_sr,
+            => {
                 const src = i.src orelse return InstructionError.MissingSrcOperand;
                 switch (src) {
                     .immediate => return InstructionError.InvalidOperands,
@@ -51,7 +54,7 @@ pub const Simulator = struct {
                             .memory => return InstructionError.NotImplemented,
                             .register => |reg_dst| switch (i.wide) {
                                 .Byte => self.registers.setByte(reg_dst, self.registers.getByte(reg_src)),
-                                .Word => self.registers.setWord(reg_dst, self.registers.getByte(reg_src)),
+                                .Word => self.registers.setWord(reg_dst, self.registers.getWord(reg_src)),
                             },
                         }
                     },
@@ -83,8 +86,8 @@ pub const Simulator = struct {
 
 pub const Registers = struct {
     // Register data is stored in a flat byte array
-    // The layout is [AX_LO, AX_HI, BX_LO, BX_HI, CX_LO, CX_HI, DX_LO, DX_HI, SP_LO, SP_HI, BP_LO, BP_HI, SI_LO, SI_HI, DI_LO, DI_HI]
-    data: [16]u8 = [_]u8{0} ** 16,
+    // The layout is [AX_LO, AX_HI, BX_LO, BX_HI, CX_LO, CX_HI, DX_LO, DX_HI, SP_LO, SP_HI, BP_LO, BP_HI, SI_LO, SI_HI, DI_LO, DI_HI, ES, CS, SS, DS]
+    data: [24]u8 = [_]u8{0} ** 24,
 
     // Register byte offsets
     const AX_OFFSET = 0;
@@ -95,6 +98,10 @@ pub const Registers = struct {
     const BP_OFFSET = 10;
     const SI_OFFSET = 12;
     const DI_OFFSET = 14;
+    const ES_OFFSET = 16;
+    const CS_OFFSET = 18;
+    const SS_OFFSET = 20;
+    const DS_OFFSET = 22;
 
     // Set register value based on operation type
     pub fn set(self: *Registers, operates_on: OperatesOn, dst: RegisterType, value: u16) void {
@@ -123,6 +130,10 @@ pub const Registers = struct {
             .BP => self.data[BP_OFFSET] = value,
             .SI => self.data[SI_OFFSET] = value,
             .DI => self.data[DI_OFFSET] = value,
+            .ES => self.data[ES_OFFSET] = value,
+            .CS => self.data[CS_OFFSET] = value,
+            .SS => self.data[SS_OFFSET] = value,
+            .DS => self.data[DS_OFFSET] = value,
         }
     }
 
@@ -165,6 +176,22 @@ pub const Registers = struct {
                 self.data[DI_OFFSET] = lo;
                 self.data[DI_OFFSET + 1] = hi;
             },
+            .ES => {
+                self.data[ES_OFFSET] = lo;
+                self.data[ES_OFFSET + 1] = hi;
+            },
+            .CS => {
+                self.data[CS_OFFSET] = lo;
+                self.data[CS_OFFSET + 1] = hi;
+            },
+            .SS => {
+                self.data[SS_OFFSET] = lo;
+                self.data[SS_OFFSET + 1] = hi;
+            },
+            .DS => {
+                self.data[DS_OFFSET] = lo;
+                self.data[DS_OFFSET + 1] = hi;
+            },
             else => unreachable,
         }
     }
@@ -188,6 +215,10 @@ pub const Registers = struct {
             .BP => return self.data[BP_OFFSET],
             .SI => return self.data[SI_OFFSET],
             .DI => return self.data[DI_OFFSET],
+            .ES => return self.data[ES_OFFSET],
+            .CS => return self.data[CS_OFFSET],
+            .SS => return self.data[SS_OFFSET],
+            .DS => return self.data[DS_OFFSET],
         }
     }
 
@@ -205,6 +236,10 @@ pub const Registers = struct {
             .BP => offset = BP_OFFSET,
             .SI => offset = SI_OFFSET,
             .DI => offset = DI_OFFSET,
+            .ES => offset = ES_OFFSET,
+            .CS => offset = CS_OFFSET,
+            .SS => offset = SS_OFFSET,
+            .DS => offset = DS_OFFSET,
             else => unreachable,
         }
 

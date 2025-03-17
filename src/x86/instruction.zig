@@ -9,6 +9,7 @@ const decodeOpcode = @import("opcodes.zig").decodeOpcode;
 const decodeOperatesOn = @import("fields.zig").decodeOperatesOn;
 const decodeRegister = @import("operands.zig").decodeRegister;
 const decodeRM = @import("operands.zig").decodeRM;
+const decodeSegmentRegister = @import("operands.zig").decodeSegmentRegister;
 const Direction = @import("fields.zig").Direction;
 const Displacement = @import("fields.zig").Displacement;
 const DstType = @import("operands.zig").DstType;
@@ -49,6 +50,9 @@ pub fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
         .cmp_rm_with_r,
         .mov_rm_to_from_r,
         => try decodeRegMemToFromReg(op, byte_1, byte_2, reader),
+        .mov_sr_to_rm,
+        .mov_rm_to_sr,
+        => try decodeMovSegmentRegister(op, byte_1, byte_2, reader),
         .mov_imm_to_r,
         => try decodeImmediateToRegister(op, byte_1, byte_2, reader),
         .mov_imm_to_rm,
@@ -103,6 +107,19 @@ fn decodeRegMemToFromReg(op: Opcode, byte_1: u8, byte_2: u8, reader: *std.io.Any
     return switch (dir) {
         Direction.FromRegister => makeInstruction(op, operates_on, rm, reg),
         Direction.ToRegister => makeInstruction(op, operates_on, reg, rm),
+    };
+}
+
+fn decodeMovSegmentRegister(op: Opcode, byte_1: u8, byte_2: u8, reader: *std.io.AnyReader) !Instruction {
+    _ = byte_1;
+    // Format: | OP | MOD 0b0 SR R/M | [DISP] | SR=Segment Register
+    const mode = decodeMode(0b11000000, byte_2);
+    const sr = decodeSegmentRegister(0b00011000, byte_2);
+    const rm = try decodeRM(mode, .Word, 0b00000111, byte_2, reader);
+    return switch (op) {
+        .mov_sr_to_rm => return makeInstruction(op, .Word, rm, sr),
+        .mov_rm_to_sr => return makeInstruction(op, .Word, sr, rm),
+        else => unreachable,
     };
 }
 

@@ -25,6 +25,8 @@ test "Homework - Listing 41" {
     try testDecodeEncodeListing("listing_0041_add_sub_cmp_jnz");
 }
 
+// Didn't do Listing 42
+
 test "Homework - Listing 43" {
     const expected =
         \\ax: 0x0001 (1)
@@ -51,6 +53,23 @@ test "Homework - Listing 44" {
         \\di: 0x0004 (4)
     ;
     try simulateListing("listing_0044_register_movs", parseHomeworkResults(expected));
+}
+
+test "Homework - Listing 45" {
+    const expected =
+        \\ax: 0x4411 (17425)
+        \\bx: 0x3344 (13124)
+        \\cx: 0x6677 (26231)
+        \\dx: 0x7788 (30600)
+        \\sp: 0x4411 (17425)
+        \\bp: 0x3344 (13124)
+        \\si: 0x6677 (26231)
+        \\di: 0x7788 (30600)
+        \\es: 0x6677 (26231)
+        \\ss: 0x4411 (17425)
+        \\ds: 0x3344 (13124)
+    ;
+    try simulateListing("listing_0045_challenge_register_movs", parseHomeworkResults(expected));
 }
 
 fn parseHomeworkResults(comptime in: []const u8) x86_SimRegisters {
@@ -91,6 +110,14 @@ fn parseHomeworkResults(comptime in: []const u8) x86_SimRegisters {
             result.setWord(.SI, value);
         } else if (std.mem.eql(u8, reg_name, "di")) {
             result.setWord(.DI, value);
+        } else if (std.mem.eql(u8, reg_name, "es")) {
+            result.setWord(.ES, value);
+        } else if (std.mem.eql(u8, reg_name, "cs")) {
+            result.setWord(.CS, value);
+        } else if (std.mem.eql(u8, reg_name, "ss")) {
+            result.setWord(.SS, value);
+        } else if (std.mem.eql(u8, reg_name, "ds")) {
+            result.setWord(.DS, value);
         }
     }
 
@@ -214,8 +241,11 @@ fn testDecodeEncodeListing(comptime listing_file_name: []const u8) !void {
 
 fn expectEqualRegisters(expected: x86_SimRegisters, actual: x86_SimRegisters) !void {
     errdefer {
-        std.log.err("Printing diff...\nAL AH BL BH CL CH DL DH |-SP--|-BP--|-SI--|-DI--|", .{});
-        std.testing.expectEqual(expected.data, actual.data) catch {};
+        std.log.err("Printing register...\nAL AH BL BH CL CH DL DH|-SP--|-BP--|-SI--|-DI--|", .{});
+        std.testing.expectEqualSlices(u8, expected.data[0..16], actual.data[0..16]) catch {};
+
+        std.log.err("Printing segment register...\n-ES--|-CS--|-SS--|-DS--|", .{});
+        std.testing.expectEqualSlices(u8, expected.data[16..], actual.data[16..]) catch {};
     }
     try std.testing.expectEqual(expected.getByte(.AL), actual.getByte(.AL));
     try std.testing.expectEqual(expected.getByte(.AH), actual.getByte(.AH));

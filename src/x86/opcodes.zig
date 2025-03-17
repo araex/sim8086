@@ -41,6 +41,8 @@ const opcode_mappings = [_]OpcodeEntry{
 
     // MOV instructions
     .{ .range = .{ .start = 0x88, .end = 0x8B, .opcode = .mov_rm_to_from_r } },
+    .{ .single = .{ .byte = 0x8C, .opcode = .mov_sr_to_rm } },
+    .{ .single = .{ .byte = 0x8E, .opcode = .mov_rm_to_sr } },
     .{ .range = .{ .start = 0xA0, .end = 0xA1, .opcode = .mov_mem_to_accumulator } },
     .{ .range = .{ .start = 0xA2, .end = 0xA3, .opcode = .mov_accumulator_to_mem } },
     .{ .range = .{ .start = 0xB0, .end = 0xBF, .opcode = .mov_imm_to_r } },
@@ -127,6 +129,8 @@ pub const Opcode = enum {
     mov_imm_to_r,
     mov_mem_to_accumulator,
     mov_accumulator_to_mem,
+    mov_rm_to_sr,
+    mov_sr_to_rm,
     add_rm_with_r_to_either,
     add_imm_to_rm,
     add_imm_to_acc,
@@ -214,7 +218,8 @@ test "decode x86_opcode" {
         .{ .in = .{ 0x89, 0b0000000 }, .expected = .mov_rm_to_from_r },
         .{ .in = .{ 0x8A, 0b0000000 }, .expected = .mov_rm_to_from_r },
         .{ .in = .{ 0x8B, 0b0000000 }, .expected = .mov_rm_to_from_r },
-        .{ .in = .{ 0x8C, 0b0000000 }, .expected = .Unknown },
+        .{ .in = .{ 0x8C, 0b0000000 }, .expected = .mov_sr_to_rm },
+        .{ .in = .{ 0x8E, 0b0000000 }, .expected = .mov_rm_to_sr },
         .{ .in = .{ 0x98, 0b0000000 }, .expected = .Unknown },
         .{ .in = .{ 0xA0, 0b0000000 }, .expected = .mov_mem_to_accumulator },
         .{ .in = .{ 0xA1, 0b0000000 }, .expected = .mov_mem_to_accumulator },

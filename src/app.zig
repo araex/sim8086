@@ -9,7 +9,7 @@ comptime {
     std.debug.assert(@hasDecl(dvui.backend, "SDLBackend"));
 }
 
-const num_registers = 8;
+const num_registers = 12;
 const State = struct {
     // The simulator
     sim: *x86.Simulator,
@@ -17,7 +17,7 @@ const State = struct {
     // Disassembly of the instructions in the simulator
     instr_asm: []const []const u8,
 
-    // Pre-allocated strings for AX, BX, CX, DX, SP, BP, SI, DI. 4 byte each + 0 termination
+    // Pre-allocated strings for all registers
     register_strings: [num_registers][:0]u8,
 
     ui_scale: f32,
@@ -49,7 +49,7 @@ const State = struct {
         }
 
         var register_strings: [num_registers][:0]u8 = undefined;
-        for (0..8) |i| {
+        for (0..num_registers) |i| {
             register_strings[i] = try std.fmt.allocPrintZ(alloc, "xxxx", .{});
         }
 
@@ -89,6 +89,10 @@ const State = struct {
         _ = std.fmt.bufPrintZ(self.register_strings[5], "{X:0>4}", .{regs.getWord(.BP)}) catch {};
         _ = std.fmt.bufPrintZ(self.register_strings[6], "{X:0>4}", .{regs.getWord(.SI)}) catch {};
         _ = std.fmt.bufPrintZ(self.register_strings[7], "{X:0>4}", .{regs.getWord(.DI)}) catch {};
+        _ = std.fmt.bufPrintZ(self.register_strings[8], "{X:0>4}", .{regs.getWord(.ES)}) catch {};
+        _ = std.fmt.bufPrintZ(self.register_strings[9], "{X:0>4}", .{regs.getWord(.CS)}) catch {};
+        _ = std.fmt.bufPrintZ(self.register_strings[10], "{X:0>4}", .{regs.getWord(.SS)}) catch {};
+        _ = std.fmt.bufPrintZ(self.register_strings[11], "{X:0>4}", .{regs.getWord(.DS)}) catch {};
     }
 };
 
@@ -188,7 +192,7 @@ fn draw_registers(state: *State) !void {
     var hbox = try dvui.box(@src(), .horizontal, .{});
     defer hbox.deinit();
 
-    const reg_names = [num_registers][:0]const u8{ "AX ", "BX ", "CX ", "DX ", "SP ", "BP ", "SI ", "DI " };
+    const reg_names = [num_registers][:0]const u8{ "AX ", "BX ", "CX ", "DX ", "SP ", "BP ", "SI ", "DI ", "ES ", "CS ", "SS ", "DS " };
 
     const color_text_dim = dvui.Options.ColorOrName{
         .color = dvui.Color.average(dvui.themeGet().color_text, dvui.themeGet().color_fill_control),
@@ -217,6 +221,20 @@ fn draw_registers(state: *State) !void {
             try tl.addText(reg_names[i], .{ .color_text = color_text_dim });
             try tl.addText(state.register_strings[i], .{ .font_style = .heading });
             if (i < 7) {
+                try tl.addText("\n", .{});
+            }
+        }
+    }
+
+    // Third column (ES, CS, SS, DS)
+    {
+        var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal });
+        defer tl.deinit();
+
+        for (8..12) |i| {
+            try tl.addText(reg_names[i], .{ .color_text = color_text_dim });
+            try tl.addText(state.register_strings[i], .{ .font_style = .heading });
+            if (i < 11) {
                 try tl.addText("\n", .{});
             }
         }

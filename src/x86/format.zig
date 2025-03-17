@@ -121,6 +121,8 @@ const asmFormatter = struct {
             .mov_imm_to_rm,
             .mov_accumulator_to_mem,
             .mov_mem_to_accumulator,
+            .mov_rm_to_sr,
+            .mov_sr_to_rm,
             => "mov",
             .add_rm_with_r_to_either,
             .add_imm_to_acc,
