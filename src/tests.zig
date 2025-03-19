@@ -86,6 +86,23 @@ test "Homework - Listing 46" {
     try simulateListing("listing_0046_add_sub_cmp", expected_regs);
 }
 
+test "Homework - Listing 47" {
+    const expected =
+        \\bx: 0x9ca5 (40101)
+        \\dx: 0x000a (10)
+        \\sp: 0x0063 (99)
+        \\bp: 0x0062 (98)
+    ;
+    var expected_regs = parseHomeworkResults(expected);
+    expected_regs.flags = .{
+        .Carry = true,
+        .Parity = true,
+        .AuxCarry = true,
+        .Sign = true,
+    };
+    try simulateListing("listing_0047_challenge_flags", expected_regs);
+}
+
 fn parseHomeworkResults(comptime in: []const u8) x86_SimRegisters {
     var result = x86_SimRegisters{};
 

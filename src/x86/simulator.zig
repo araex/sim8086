@@ -103,14 +103,29 @@ pub const Simulator = struct {
             self.registers.setAs(T, dst, result[0]);
         }
 
-        const msb = (@as(T, 0) >> 1);
+        const msb = (@as(T, 1) << (@bitSizeOf(T) - 1));
+        const op1_sign = (operand_1 & msb) != 0;
+        const op2_sign = (operand_2 & msb) != 0;
+        const result_sign = (result[0] & msb) != 0;
+
         self.registers.flags = .{
+            .Carry = switch (op) {
+                .Add => result[1] == 1, // unsigned overflow
+                .Sub, .Cmp => operand_1 < operand_2,
+            },
             // "the parity flag reflects the parity of only the least significant byte"
             // https://en.wikipedia.org/wiki/Parity_flag#x86_processors
             .Parity = @popCount(@as(u8, @truncate(result[0]))) % 2 == 0,
+            .AuxCarry = switch (op) {
+                .Add => ((operand_1 & 0xF) + (operand_2 & 0xF)) > 0xF,
+                .Sub, .Cmp => (operand_1 & 0xF) < (operand_2 & 0xF),
+            },
             .Zero = (result[0] == 0),
-            .Sign = (result[0] & msb) != 0,
-            .Overflow = (result[1] == 1),
+            .Sign = result_sign,
+            .Overflow = switch (op) {
+                .Add => (op1_sign == op2_sign) and (result_sign != op1_sign),
+                .Sub, .Cmp => (op1_sign != op2_sign) and (result_sign != op1_sign),
+            },
         };
     }
 };
@@ -133,7 +148,9 @@ pub const Registers = struct {
     data: [24]u8 = [_]u8{0} ** 24,
 
     flags: struct {
+        Carry: bool = false,
         Parity: bool = false,
+        AuxCarry: bool = false,
         Zero: bool = false,
         Sign: bool = false,
         Overflow: bool = false,

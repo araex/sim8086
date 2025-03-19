@@ -249,8 +249,10 @@ fn draw_registers(state: *State) !void {
         const flags = state.sim.registers.flags;
         var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal });
         defer tl.deinit();
-        try tl.addText("P Z S O\n", .{ .color_text = color_text_dim });
+        try tl.addText("C P A Z S O\n", .{ .color_text = color_text_dim });
+        try tl.addText(if (flags.Carry) "1 " else "0 ", .{});
         try tl.addText(if (flags.Parity) "1 " else "0 ", .{});
+        try tl.addText(if (flags.AuxCarry) "1 " else "0 ", .{});
         try tl.addText(if (flags.Zero) "1 " else "0 ", .{});
         try tl.addText(if (flags.Sign) "1 " else "0 ", .{});
         try tl.addText(if (flags.Overflow) "1 " else "0 ", .{});
