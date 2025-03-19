@@ -288,9 +288,15 @@ pub fn decodeImmediate(operates_on: OperatesOn, byte: u8, reader: anytype) !Imme
 }
 
 pub fn decodeImmediateWithSignExtension(byte: u8) !ImmediateField {
+    // When the immediate is for a word operation, but we have a signed byte,
+    // we need to sign-extend the byte to a 16-bit word
+    const signed_byte: i8 = @bitCast(byte);
+    const signed_word: i16 = signed_byte; // Zig automatically sign-extends
+    const unsigned_word: u16 = @bitCast(signed_word);
+
     return ImmediateField{
         .value = ImmediateValue{
-            .byte = byte,
+            .word = unsigned_word,
         },
     };
 }
