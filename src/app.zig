@@ -192,9 +192,11 @@ fn draw_registers(state: *State) !void {
     var vbox = try dvui.box(@src(), .vertical, .{});
     defer vbox.deinit();
 
-    const color_text_dim = dvui.Options.ColorOrName{
+    const opt_dim = dvui.Options{ .color_text = dvui.Options.ColorOrName{
         .color = dvui.Color.average(dvui.themeGet().color_text, dvui.themeGet().color_fill_control),
-    };
+    } };
+
+    const opt_bold = dvui.Options{ .font_style = .heading };
 
     {
         var hbox = try dvui.box(@src(), .horizontal, .{});
@@ -208,8 +210,8 @@ fn draw_registers(state: *State) !void {
             defer tl.deinit();
 
             for (0..4) |i| {
-                try tl.addText(reg_names[i], .{ .color_text = color_text_dim });
-                try tl.addText(state.register_strings[i], .{ .font_style = .heading });
+                try tl.addText(reg_names[i], opt_dim);
+                try tl.addText(state.register_strings[i], opt_bold);
                 if (i < 3) {
                     try tl.addText("\n", .{});
                 }
@@ -222,8 +224,8 @@ fn draw_registers(state: *State) !void {
             defer tl.deinit();
 
             for (4..8) |i| {
-                try tl.addText(reg_names[i], .{ .color_text = color_text_dim });
-                try tl.addText(state.register_strings[i], .{ .font_style = .heading });
+                try tl.addText(reg_names[i], opt_dim);
+                try tl.addText(state.register_strings[i], opt_bold);
                 if (i < 7) {
                     try tl.addText("\n", .{});
                 }
@@ -236,8 +238,8 @@ fn draw_registers(state: *State) !void {
             defer tl.deinit();
 
             for (8..12) |i| {
-                try tl.addText(reg_names[i], .{ .color_text = color_text_dim });
-                try tl.addText(state.register_strings[i], .{ .font_style = .heading });
+                try tl.addText(reg_names[i], opt_dim);
+                try tl.addText(state.register_strings[i], opt_bold);
                 if (i < 11) {
                     try tl.addText("\n", .{});
                 }
@@ -246,16 +248,22 @@ fn draw_registers(state: *State) !void {
     }
 
     {
-        const flags = state.sim.registers.flags;
         var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal });
         defer tl.deinit();
-        try tl.addText("C P A Z S O\n", .{ .color_text = color_text_dim });
-        try tl.addText(if (flags.Carry) "1 " else "0 ", .{});
-        try tl.addText(if (flags.Parity) "1 " else "0 ", .{});
-        try tl.addText(if (flags.AuxCarry) "1 " else "0 ", .{});
-        try tl.addText(if (flags.Zero) "1 " else "0 ", .{});
-        try tl.addText(if (flags.Sign) "1 " else "0 ", .{});
-        try tl.addText(if (flags.Overflow) "1 " else "0 ", .{});
+        try tl.addText("C P A Z S O\n", opt_dim);
+
+        const flag_values = [_]bool{
+            state.sim.registers.flags.Carry,
+            state.sim.registers.flags.Parity,
+            state.sim.registers.flags.AuxCarry,
+            state.sim.registers.flags.Zero,
+            state.sim.registers.flags.Sign,
+            state.sim.registers.flags.Overflow,
+        };
+
+        for (flag_values) |flag| {
+            try tl.addText(if (flag) "1 " else "0 ", if (flag) opt_bold else opt_dim);
+        }
     }
 }
 
@@ -287,7 +295,7 @@ fn draw_controls(state: *State) !void {
     var hbox = try dvui.box(@src(), .horizontal, .{});
     defer hbox.deinit();
 
-    const opts = dvui.Options{ .gravity_y = 0.5 };
+    var opts = dvui.Options{ .gravity_y = 0.5 };
     if (!state.sim.isDone()) {
         if (try buttonIconAndLabel(@src(), "step", dvui.entypo.controller_play, opts)) {
             try state.sim.step();
@@ -301,6 +309,10 @@ fn draw_controls(state: *State) !void {
         if (state.sim.isDone()) {
             try dvui.toast(@src(), .{ .message = "Program ended" });
         }
+    }
+
+    if (state.sim.isDone()) {
+        opts = opts.override(dvui.themeGet().style_accent);
     }
     if (try buttonIconAndLabel(@src(), "reset", dvui.entypo.ccw, opts)) {
         state.sim.reset();
