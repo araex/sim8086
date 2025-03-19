@@ -72,6 +72,20 @@ test "Homework - Listing 45" {
     try simulateListing("listing_0045_challenge_register_movs", parseHomeworkResults(expected));
 }
 
+test "Homework - Listing 46" {
+    const expected =
+        \\bx: 0xe102 (57602)
+        \\cx: 0x0f01 (3841)
+        \\sp: 0x03e6 (998)
+    ;
+    var expected_regs = parseHomeworkResults(expected);
+    expected_regs.flags = .{
+        .Parity = true,
+        .Zero = true,
+    };
+    try simulateListing("listing_0046_add_sub_cmp", expected_regs);
+}
+
 fn parseHomeworkResults(comptime in: []const u8) x86_SimRegisters {
     var result = x86_SimRegisters{};
 
@@ -138,11 +152,11 @@ fn simulateListing(comptime listing_file_name: []const u8, expected_regs: x86_Si
     try expectEqualRegisters(expected_regs, sim.registers);
 }
 
-test "Simulator" {
+test "Simulator Testbench" {
     const asm_instructions =
         \\bits 16
-        \\mov al, 5
-        \\mov bx, 3
+        \\add al, 7
+        \\sub al, 7
     ;
 
     const alloc = std.testing.allocator;
@@ -158,12 +172,18 @@ test "Simulator" {
     try std.testing.expectEqual(0, sim.cur_instruction);
     try expectEqualRegisters(expected_registers, sim.registers);
 
-    expected_registers.setByte(.AL, 5);
+    expected_registers.setByte(.AL, 7);
+    expected_registers.flags = .{};
     try sim.step();
     try expectEqualRegisters(expected_registers, sim.registers);
 
-    expected_registers.setWord(.BX, 3);
+    expected_registers.setByte(.AL, 0);
+    expected_registers.flags = .{
+        .Parity = true,
+        .Zero = true,
+    };
     try sim.step();
+    try expectEqualRegisters(expected_registers, sim.registers);
 }
 
 fn testEncodeDecodeWithAsmDiff(comptime asm_instruction: [:0]const u8) !void {
@@ -241,11 +261,13 @@ fn testDecodeEncodeListing(comptime listing_file_name: []const u8) !void {
 
 fn expectEqualRegisters(expected: x86_SimRegisters, actual: x86_SimRegisters) !void {
     errdefer {
-        std.log.err("Printing register...\nAL AH BL BH CL CH DL DH|-SP--|-BP--|-SI--|-DI--|", .{});
-        std.testing.expectEqualSlices(u8, expected.data[0..16], actual.data[0..16]) catch {};
+        if (!std.meta.eql(expected.data, actual.data)) {
+            std.log.err("Printing register...\nAL AH BL BH CL CH DL DH|-SP--|-BP--|-SI--|-DI--|", .{});
+            std.testing.expectEqualSlices(u8, expected.data[0..16], actual.data[0..16]) catch {};
 
-        std.log.err("Printing segment register...\n-ES--|-CS--|-SS--|-DS--|", .{});
-        std.testing.expectEqualSlices(u8, expected.data[16..], actual.data[16..]) catch {};
+            std.log.err("Printing segment register...\n-ES--|-CS--|-SS--|-DS--|", .{});
+            std.testing.expectEqualSlices(u8, expected.data[16..], actual.data[16..]) catch {};
+        }
     }
     try std.testing.expectEqual(expected.getByte(.AL), actual.getByte(.AL));
     try std.testing.expectEqual(expected.getByte(.AH), actual.getByte(.AH));
@@ -264,6 +286,28 @@ fn expectEqualRegisters(expected: x86_SimRegisters, actual: x86_SimRegisters) !v
     try std.testing.expectEqual(expected.getWord(.BP), actual.getWord(.BP));
     try std.testing.expectEqual(expected.getWord(.SI), actual.getWord(.SI));
     try std.testing.expectEqual(expected.getWord(.DI), actual.getWord(.DI));
+
+    var any_flag_diff = false;
+    if (expected.flags.Parity != actual.flags.Parity) {
+        std.log.err("Expected Parity flag {}, found {}", .{ expected.flags.Parity, actual.flags.Parity });
+        any_flag_diff = true;
+    }
+    if (expected.flags.Zero != actual.flags.Zero) {
+        std.log.err("Expected Zero flag {}, found {}", .{ expected.flags.Zero, actual.flags.Zero });
+        any_flag_diff = true;
+    }
+    if (expected.flags.Sign != actual.flags.Sign) {
+        std.log.err("Expected Sign flag {}, found {}", .{ expected.flags.Sign, actual.flags.Sign });
+        any_flag_diff = true;
+    }
+    if (expected.flags.Overflow != actual.flags.Overflow) {
+        std.log.err("Expected Overflow flag {}, found {}", .{ expected.flags.Overflow, actual.flags.Overflow });
+        any_flag_diff = true;
+    }
+
+    if (any_flag_diff) {
+        return error.TestExpectedEqual;
+    }
 }
 
 fn getUniqueFileName(comptime asm_instruction: [:0]const u8) []const u8 {

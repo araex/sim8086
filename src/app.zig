@@ -17,7 +17,7 @@ const State = struct {
     // Disassembly of the instructions in the simulator
     instr_asm: []const []const u8,
 
-    // Pre-allocated strings for all registers
+    // Pre-allocated strings for all registers (excluding flags)
     register_strings: [num_registers][:0]u8,
 
     ui_scale: f32,
@@ -189,55 +189,71 @@ fn draw_registers(state: *State) !void {
     // Update the register strings before displaying
     state.updateRegisterStrings();
 
-    var hbox = try dvui.box(@src(), .horizontal, .{});
-    defer hbox.deinit();
-
-    const reg_names = [num_registers][:0]const u8{ "AX ", "BX ", "CX ", "DX ", "SP ", "BP ", "SI ", "DI ", "ES ", "CS ", "SS ", "DS " };
+    var vbox = try dvui.box(@src(), .vertical, .{});
+    defer vbox.deinit();
 
     const color_text_dim = dvui.Options.ColorOrName{
         .color = dvui.Color.average(dvui.themeGet().color_text, dvui.themeGet().color_fill_control),
     };
 
-    // First column (AX, BX, CX, DX)
     {
-        var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal });
-        defer tl.deinit();
+        var hbox = try dvui.box(@src(), .horizontal, .{});
+        defer hbox.deinit();
 
-        for (0..4) |i| {
-            try tl.addText(reg_names[i], .{ .color_text = color_text_dim });
-            try tl.addText(state.register_strings[i], .{ .font_style = .heading });
-            if (i < 3) {
-                try tl.addText("\n", .{});
+        const reg_names = [num_registers][:0]const u8{ "AX ", "BX ", "CX ", "DX ", "SP ", "BP ", "SI ", "DI ", "ES ", "CS ", "SS ", "DS " };
+
+        // First column (AX, BX, CX, DX)
+        {
+            var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal });
+            defer tl.deinit();
+
+            for (0..4) |i| {
+                try tl.addText(reg_names[i], .{ .color_text = color_text_dim });
+                try tl.addText(state.register_strings[i], .{ .font_style = .heading });
+                if (i < 3) {
+                    try tl.addText("\n", .{});
+                }
+            }
+        }
+
+        // Second column (SP, BP, SI, DI)
+        {
+            var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal });
+            defer tl.deinit();
+
+            for (4..8) |i| {
+                try tl.addText(reg_names[i], .{ .color_text = color_text_dim });
+                try tl.addText(state.register_strings[i], .{ .font_style = .heading });
+                if (i < 7) {
+                    try tl.addText("\n", .{});
+                }
+            }
+        }
+
+        // Third column (ES, CS, SS, DS)
+        {
+            var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal });
+            defer tl.deinit();
+
+            for (8..12) |i| {
+                try tl.addText(reg_names[i], .{ .color_text = color_text_dim });
+                try tl.addText(state.register_strings[i], .{ .font_style = .heading });
+                if (i < 11) {
+                    try tl.addText("\n", .{});
+                }
             }
         }
     }
 
-    // Second column (SP, BP, SI, DI)
     {
+        const flags = state.sim.registers.flags;
         var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal });
         defer tl.deinit();
-
-        for (4..8) |i| {
-            try tl.addText(reg_names[i], .{ .color_text = color_text_dim });
-            try tl.addText(state.register_strings[i], .{ .font_style = .heading });
-            if (i < 7) {
-                try tl.addText("\n", .{});
-            }
-        }
-    }
-
-    // Third column (ES, CS, SS, DS)
-    {
-        var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal });
-        defer tl.deinit();
-
-        for (8..12) |i| {
-            try tl.addText(reg_names[i], .{ .color_text = color_text_dim });
-            try tl.addText(state.register_strings[i], .{ .font_style = .heading });
-            if (i < 11) {
-                try tl.addText("\n", .{});
-            }
-        }
+        try tl.addText("P Z S O\n", .{ .color_text = color_text_dim });
+        try tl.addText(if (flags.Parity) "1 " else "0 ", .{});
+        try tl.addText(if (flags.Zero) "1 " else "0 ", .{});
+        try tl.addText(if (flags.Sign) "1 " else "0 ", .{});
+        try tl.addText(if (flags.Overflow) "1 " else "0 ", .{});
     }
 }
 

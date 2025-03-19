@@ -43,7 +43,6 @@ pub fn build(b: *std.Build) void {
     // install exe
     const install_exe = b.addInstallArtifact(main_exe, .{});
     b.getInstallStep().dependOn(&install_exe.step);
-    addCheckStep(b, main_module);
 
     // run: main
     const main_cmd = b.addRunArtifact(main_exe);

@@ -2,6 +2,7 @@ const assert = @import("std").debug.assert;
 const std = @import("std");
 
 const Instruction = @import("instruction.zig").Instruction;
+const Opcode = @import("opcodes.zig").Opcode;
 const OperatesOn = @import("fields.zig").OperatesOn;
 const RegisterType = @import("operands.zig").Register;
 const SrcType = @import("operands.zig").SrcType;
@@ -28,41 +29,36 @@ pub const Simulator = struct {
 
     pub fn step(self: *Simulator) !void {
         const i = self.getCurrentInstruction();
+        defer self.cur_instruction += 1;
+        if (opcodeToBinaryOp(i.op)) |bin_op| {
+            const src = i.src orelse return InstructionError.MissingSrcOperand;
+            switch (i.dst) {
+                .jump => return InstructionError.InvalidOperands,
+                .memory => return InstructionError.NotImplemented,
+                .register => |reg_dst| switch (i.wide) {
+                    .Byte => try self.exec(bin_op, u8, reg_dst, src),
+                    .Word => try self.exec(bin_op, u16, reg_dst, src),
+                },
+            }
+            return;
+        }
         switch (i.op) {
-            .mov_imm_to_r => {
+            .mov_imm_to_r, .mov_rm_to_from_r, .mov_sr_to_rm, .mov_rm_to_sr => {
                 const src = i.src orelse return InstructionError.MissingSrcOperand;
                 switch (i.dst) {
                     .jump => return InstructionError.InvalidOperands,
                     .memory => return InstructionError.NotImplemented,
-                    .register => |reg| switch (i.wide) {
-                        .Byte => self.registers.setByte(reg, try src.as(u8)),
-                        .Word => self.registers.setWord(reg, try src.as(u16)),
+                    .register => |reg_dst| switch (i.wide) {
+                        .Byte => self.registers.setByte(reg_dst, try getValue(u8, self.registers, src)),
+                        .Word => self.registers.setWord(reg_dst, try getValue(u16, self.registers, src)),
                     },
                 }
             },
-            .mov_rm_to_from_r,
-            .mov_sr_to_rm,
-            .mov_rm_to_sr,
-            => {
-                const src = i.src orelse return InstructionError.MissingSrcOperand;
-                switch (src) {
-                    .immediate => return InstructionError.InvalidOperands,
-                    .memory => return InstructionError.NotImplemented,
-                    .register => |reg_src| {
-                        switch (i.dst) {
-                            .jump => return InstructionError.InvalidOperands,
-                            .memory => return InstructionError.NotImplemented,
-                            .register => |reg_dst| switch (i.wide) {
-                                .Byte => self.registers.setByte(reg_dst, self.registers.getByte(reg_src)),
-                                .Word => self.registers.setWord(reg_dst, self.registers.getWord(reg_src)),
-                            },
-                        }
-                    },
-                }
+            else => {
+                std.log.err("Instruction '{s}'' not implemented ", .{@tagName(i.op)});
+                return InstructionError.NotImplemented;
             },
-            else => return InstructionError.NotImplemented,
         }
-        self.cur_instruction += 1;
     }
 
     pub fn reset(self: *Simulator) void {
@@ -82,12 +78,66 @@ pub const Simulator = struct {
     fn isValidInstructionPointer(self: *const Simulator) bool {
         return self.cur_instruction < self.instructions.len;
     }
+
+    const BinaryOperation = enum { Add, Sub, Cmp };
+
+    fn opcodeToBinaryOp(opcode: Opcode) ?BinaryOperation {
+        switch (opcode) {
+            .add_rm_with_r_to_either, .add_imm_to_rm, .add_imm_to_acc => return .Add,
+            .sub_rm_and_r_to_either, .sub_imm_to_rm, .sub_imm_to_acc => return .Sub,
+            .cmp_rm_with_r, .cmp_imm_with_rm, .cmp_imm_with_acc => return .Cmp,
+            else => return null,
+        }
+    }
+
+    fn exec(self: *Simulator, op: BinaryOperation, T: type, dst: RegisterType, src: SrcType) !void {
+        const operand_1 = self.registers.getAs(T, dst);
+        const operand_2 = try getValue(T, self.registers, src);
+        const result = switch (op) {
+            .Add => @addWithOverflow(operand_1, operand_2),
+            .Sub => @subWithOverflow(operand_1, operand_2),
+            .Cmp => @subWithOverflow(operand_1, operand_2),
+        };
+
+        if (op != .Cmp) {
+            self.registers.setAs(T, dst, result[0]);
+        }
+
+        const msb = (@as(T, 0) >> 1);
+        self.registers.flags = .{
+            // "the parity flag reflects the parity of only the least significant byte"
+            // https://en.wikipedia.org/wiki/Parity_flag#x86_processors
+            .Parity = @popCount(@as(u8, @truncate(result[0]))) % 2 == 0,
+            .Zero = (result[0] == 0),
+            .Sign = (result[0] & msb) != 0,
+            .Overflow = (result[1] == 1),
+        };
+    }
 };
+
+fn getValue(T: type, regs: Registers, src: SrcType) !T {
+    switch (src) {
+        .memory => return InstructionError.NotImplemented,
+        .immediate => |imm| return imm.as(T),
+        .register => |reg_src| return switch (T) {
+            u8 => regs.getByte(reg_src),
+            u16 => regs.getWord(reg_src),
+            else => unreachable,
+        },
+    }
+}
 
 pub const Registers = struct {
     // Register data is stored in a flat byte array
     // The layout is [AX_LO, AX_HI, BX_LO, BX_HI, CX_LO, CX_HI, DX_LO, DX_HI, SP_LO, SP_HI, BP_LO, BP_HI, SI_LO, SI_HI, DI_LO, DI_HI, ES, CS, SS, DS]
     data: [24]u8 = [_]u8{0} ** 24,
+
+    flags: struct {
+        Parity: bool = false,
+        Zero: bool = false,
+        Sign: bool = false,
+        Overflow: bool = false,
+    } = .{},
 
     // Register byte offsets
     const AX_OFFSET = 0;
@@ -196,6 +246,14 @@ pub const Registers = struct {
         }
     }
 
+    pub fn setAs(self: *Registers, T: type, dst: RegisterType, value: anytype) void {
+        switch (T) {
+            u8 => return self.setByte(dst, @as(T, value)),
+            u16 => return self.setWord(dst, @as(T, value)),
+            else => unreachable,
+        }
+    }
+
     // Get 8-bit register value
     pub fn getByte(self: *const Registers, reg: RegisterType) u8 {
         switch (reg) {
@@ -244,6 +302,14 @@ pub const Registers = struct {
         }
 
         return @as(u16, self.data[offset]) | (@as(u16, self.data[offset + 1]) << 8);
+    }
+
+    pub fn getAs(self: *const Registers, T: type, reg: RegisterType) T {
+        switch (T) {
+            u8 => return self.getByte(reg),
+            u16 => return self.getWord(reg),
+            else => unreachable,
+        }
     }
 };
 

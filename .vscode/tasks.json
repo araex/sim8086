@@ -51,7 +51,7 @@
             "id": "sim8086Arg",
             "type": "promptString",
             "description": "Enter the argument for sim8086",
-            "default": "${workspaceFolder}/src/data/listing_0045_challenge_register_movs"
+            "default": "${workspaceFolder}/src/data/listing_0046_add_sub_cmp"
         }
     ]
 }
