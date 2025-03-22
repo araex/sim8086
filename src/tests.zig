@@ -97,7 +97,7 @@ test "Homework - Listing 47" {
         \\dx: 0x000a (10)
         \\sp: 0x0063 (99)
         \\bp: 0x0062 (98)
-        \\ip: 0x002d (45)
+        \\ip: 0x002c (44)
     ;
     var expected_regs = parseHomeworkResults(expected);
     expected_regs.flags = .{
@@ -121,6 +121,19 @@ test "Homework - Listing 48" {
         .Sign = true,
     };
     try simulateListing("listing_0048_ip_register", expected_regs);
+}
+
+test "Homework - Listing 49" {
+    const expected =
+        \\bx: 0x0406 (1030)
+        \\ip: 0x000e (14)
+    ;
+    var expected_regs = parseHomeworkResults(expected);
+    expected_regs.flags = .{
+        .Parity = true,
+        .Zero = true,
+    };
+    try simulateListing("listing_0049_conditional_jumps", expected_regs);
 }
 
 fn parseHomeworkResults(comptime in: []const u8) x86_SimRegisters {

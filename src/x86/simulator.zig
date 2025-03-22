@@ -16,21 +16,30 @@ const InstructionError = error{
 pub const Simulator = struct {
     instructions: []const Instruction,
     cur_instruction_idx: usize,
+    program_length: u16,
 
     registers: Registers,
 
     pub fn init(instructions: []const Instruction) !Simulator {
+        var byte_count: u16 = 0;
+        for (instructions) |i| {
+            byte_count += i.size();
+        }
         return Simulator{
             .instructions = instructions,
             .cur_instruction_idx = 0,
             .registers = .{},
+            .program_length = byte_count,
         };
     }
 
     pub fn step(self: *Simulator) !void {
         const i = self.getCurrentInstruction();
         self.registers.setWord(.IP, self.registers.getWord(.IP) + i.size());
-        defer self.cur_instruction_idx += 1;
+        self.cur_instruction_idx += 1;
+        if (toJump(i, self.registers)) |jump| {
+            return self.execJump(jump);
+        }
         if (opcodeToBinaryOp(i.op)) |bin_op| {
             const src = i.src orelse return InstructionError.MissingSrcOperand;
             switch (i.dst) {
@@ -43,6 +52,7 @@ pub const Simulator = struct {
             }
             return;
         }
+
         switch (i.op) {
             .mov_imm_to_r, .mov_rm_to_from_r, .mov_sr_to_rm, .mov_rm_to_sr => {
                 const src = i.src orelse return InstructionError.MissingSrcOperand;
@@ -79,16 +89,41 @@ pub const Simulator = struct {
     fn isValidInstructionPointer(self: *const Simulator) bool {
         return self.cur_instruction_idx < self.instructions.len;
     }
-
-    const BinaryOperation = enum { Add, Sub, Cmp };
-
-    fn opcodeToBinaryOp(opcode: Opcode) ?BinaryOperation {
-        switch (opcode) {
-            .add_rm_with_r_to_either, .add_imm_to_rm, .add_imm_to_acc => return .Add,
-            .sub_rm_and_r_to_either, .sub_imm_to_rm, .sub_imm_to_acc => return .Sub,
-            .cmp_rm_with_r, .cmp_imm_with_rm, .cmp_imm_with_acc => return .Cmp,
-            else => return null,
+    fn execJump(self: *Simulator, jump: Jump) !void {
+        const signed_offset: i8 = jump.signed_offset;
+        if (signed_offset == 0) {
+            return;
         }
+        const current_ip = self.registers.getWord(.IP);
+
+        //  @as(i32, signed_offset)
+        const new_ip_signed = @as(i32, @intCast(current_ip)) + signed_offset;
+        if (new_ip_signed < 0 or new_ip_signed > self.program_length) {
+            return error.JumpedOutsideValidRange;
+        }
+
+        // Apply the jump offset
+        const new_ip = @as(u16, @intCast(new_ip_signed));
+        self.registers.setWord(.IP, new_ip);
+
+        // Find the instruction that corresponds to this new IP
+        var idx: usize = self.cur_instruction_idx;
+        var ip_tracker: i32 = current_ip;
+        while (ip_tracker != new_ip) {
+            if (signed_offset < 0) {
+                idx -= 1;
+                ip_tracker -= self.instructions[idx].size();
+            } else {
+                idx += 1;
+                ip_tracker += self.instructions[idx].size();
+            }
+
+            if (ip_tracker < 0 or ip_tracker > self.program_length) {
+                return error.JumpedOutsideValidRange;
+            }
+        }
+
+        self.cur_instruction_idx = idx;
     }
 
     fn exec(self: *Simulator, op: BinaryOperation, T: type, dst: RegisterType, src: SrcType) !void {
@@ -130,6 +165,66 @@ pub const Simulator = struct {
         };
     }
 };
+
+const BinaryOperation = enum { Add, Sub, Cmp };
+
+fn opcodeToBinaryOp(opcode: Opcode) ?BinaryOperation {
+    switch (opcode) {
+        .add_rm_with_r_to_either, .add_imm_to_rm, .add_imm_to_acc => return .Add,
+        .sub_rm_and_r_to_either, .sub_imm_to_rm, .sub_imm_to_acc => return .Sub,
+        .cmp_rm_with_r, .cmp_imm_with_rm, .cmp_imm_with_acc => return .Cmp,
+        else => return null,
+    }
+}
+
+const Jump = struct {
+    signed_offset: i8,
+};
+
+fn toJump(instruction: Instruction, regs: Registers) ?Jump {
+    const flags = regs.flags;
+
+    const offset = switch (instruction.dst) {
+        .jump => |jump| jump.increment,
+        else => return null,
+    };
+
+    switch (instruction.op) {
+        // Conditional jumps based on flags
+        .jo => if (flags.Overflow) return Jump{ .signed_offset = offset },
+        .jno => if (!flags.Overflow) return Jump{ .signed_offset = offset },
+        .jb_jnae => if (flags.Carry) return Jump{ .signed_offset = offset },
+        .jnb_jae => if (!flags.Carry) return Jump{ .signed_offset = offset },
+        .je_jz => if (flags.Zero) return Jump{ .signed_offset = offset },
+        .jne_jnz => if (!flags.Zero) return Jump{ .signed_offset = offset },
+        .jbe_jna => if (flags.Carry or flags.Zero) return Jump{ .signed_offset = offset },
+        .jnbe_ja => if (!flags.Carry and !flags.Zero) return Jump{ .signed_offset = offset },
+        .js => if (flags.Sign) return Jump{ .signed_offset = offset },
+        .jns => if (!flags.Sign) return Jump{ .signed_offset = offset },
+        .jp_jpe => if (flags.Parity) return Jump{ .signed_offset = offset },
+        .jnp_jpo => if (!flags.Parity) return Jump{ .signed_offset = offset },
+        .jl_jnge => if (flags.Sign != flags.Overflow) return Jump{ .signed_offset = offset },
+        .jnl_jge => if (flags.Sign == flags.Overflow) return Jump{ .signed_offset = offset },
+        .jle_jng => if (flags.Zero or (flags.Sign != flags.Overflow)) return Jump{ .signed_offset = offset },
+        .jnle_jg => if (!flags.Zero and (flags.Sign == flags.Overflow)) return Jump{ .signed_offset = offset },
+        .loopnz_loopne => {
+            const cx = regs.getWord(.CX);
+            if (cx > 1 and !flags.Zero) return Jump{ .signed_offset = offset };
+        },
+        .loopz_loope => {
+            const cx = regs.getWord(.CX);
+            if (cx > 1 and flags.Zero) return Jump{ .signed_offset = offset };
+        },
+        .loop => {
+            const cx = regs.getWord(.CX);
+            if (cx > 1) return Jump{ .signed_offset = offset };
+        },
+        .jcxz => if (regs.getWord(.CX) == 0) return Jump{ .signed_offset = offset },
+        else => return null, // no jump condition met
+    }
+
+    return Jump{ .signed_offset = 0 };
+}
 
 fn getValue(T: type, regs: Registers, src: SrcType) !T {
     switch (src) {

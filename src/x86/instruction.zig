@@ -15,6 +15,8 @@ const Displacement = @import("fields.zig").Displacement;
 const DstType = @import("operands.zig").DstType;
 const EffectiveAddressCalculation = @import("fields.zig").EffectiveAddressCalculation;
 const getOpcodeSize = @import("opcodes.zig").getOpcodeSize;
+const ImmediateField = @import("operands.zig").ImmediateField;
+const ImmediateValue = @import("operands.zig").ImmediateValue;
 const makeDst = @import("operands.zig").makeDst;
 const makeSrc = @import("operands.zig").makeSrc;
 const Memory = @import("operands.zig").Memory;
@@ -73,7 +75,27 @@ pub const Instruction = struct {
                 .immediate => |imm| {
                     switch (imm.value) {
                         .byte => total_size += 1,
-                        .word => total_size += 2,
+                        .word => {
+                            // Check if this could have been a sign-extended immediate
+                            // For certain instructions with word operands, immediates in the range -128 to 127
+                            // would have been encoded as a single byte with sign extension
+                            const could_be_sign_extended = switch (self.op) {
+                                .add_imm_to_rm, .sub_imm_to_rm, .cmp_imm_with_rm => true,
+                                else => false,
+                            };
+
+                            if (could_be_sign_extended and self.wide == .Word) {
+                                const value = imm.value.word;
+                                // Check if value fits in signed byte range (-128 to 127)
+                                if (value <= 127 or value >= 0xFF80) { // 0xFF80 is -128 as u16
+                                    total_size += 1; // Sign-extended immediate takes 1 byte
+                                } else {
+                                    total_size += 2; // Regular word immediate
+                                }
+                            } else {
+                                total_size += 2; // Regular word immediate
+                            }
+                        },
                     }
                 },
             }
@@ -262,4 +284,64 @@ fn decodeJumpInstruction(op: Opcode, byte_2: u8) Instruction {
     // No need for pattern here as it's very simple
     const jump = decodeJumpDestination(byte_2);
     return makeInstruction(op, .Byte, jump, null);
+}
+
+// TESTS
+test "instruction size with sign-extended immediates" {
+    const testing = std.testing;
+    const TestCase = struct {
+        inst: Instruction,
+        expected_size: u4,
+    };
+
+    const tests = [_]TestCase{
+        .{
+            .inst = makeInstruction(
+                Opcode.add_imm_to_rm,
+                OperatesOn.Word,
+                Register.AX,
+                ImmediateField{
+                    .value = ImmediateValue{ .word = 5 },
+                },
+            ),
+            .expected_size = 3,
+        },
+        .{
+            .inst = makeInstruction(
+                Opcode.add_imm_to_rm,
+                OperatesOn.Word,
+                Register.AX,
+                ImmediateField{
+                    .value = ImmediateValue{ .word = 300 },
+                },
+            ),
+            .expected_size = 4,
+        },
+        .{
+            .inst = makeInstruction(
+                Opcode.add_imm_to_rm,
+                OperatesOn.Word,
+                Register.AX,
+                ImmediateField{
+                    .value = ImmediateValue{ .word = 0xFFF0 },
+                },
+            ),
+            .expected_size = 3,
+        },
+        .{
+            .inst = makeInstruction(
+                Opcode.mov_imm_to_r,
+                OperatesOn.Word,
+                Register.AX,
+                ImmediateField{
+                    .value = ImmediateValue{ .word = 5 },
+                },
+            ),
+            .expected_size = 3,
+        },
+    };
+
+    for (tests) |tc| {
+        try testing.expectEqual(tc.expected_size, tc.inst.size());
+    }
 }

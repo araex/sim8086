@@ -51,7 +51,7 @@
             "id": "sim8086Arg",
             "type": "promptString",
             "description": "Enter the argument for sim8086",
-            "default": "${workspaceFolder}/src/data/listing_0048_ip_register"
+            "default": "${workspaceFolder}/src/data/listing_0049_conditional_jumps"
         }
     ]
 }
