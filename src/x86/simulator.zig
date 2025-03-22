@@ -90,40 +90,32 @@ pub const Simulator = struct {
         return self.cur_instruction_idx < self.instructions.len;
     }
     fn execJump(self: *Simulator, jump: Jump) !void {
+        if (jump.should_dec_cx) {
+            self.registers.setWord(.CX, self.registers.getWord(.CX) - 1);
+        }
+
         const signed_offset: i8 = jump.signed_offset;
         if (signed_offset == 0) {
             return;
         }
         const current_ip = self.registers.getWord(.IP);
-
-        //  @as(i32, signed_offset)
         const new_ip_signed = @as(i32, @intCast(current_ip)) + signed_offset;
-        if (new_ip_signed < 0 or new_ip_signed > self.program_length) {
+        if (new_ip_signed < 0 or new_ip_signed >= self.program_length) {
             return error.JumpedOutsideValidRange;
         }
-
-        // Apply the jump offset
         const new_ip = @as(u16, @intCast(new_ip_signed));
         self.registers.setWord(.IP, new_ip);
 
-        // Find the instruction that corresponds to this new IP
-        var idx: usize = self.cur_instruction_idx;
-        var ip_tracker: i32 = current_ip;
-        while (ip_tracker != new_ip) {
-            if (signed_offset < 0) {
-                idx -= 1;
-                ip_tracker -= self.instructions[idx].size();
-            } else {
-                idx += 1;
-                ip_tracker += self.instructions[idx].size();
+        // Should really consider storing the IP -> instruction. But good enough for now.
+        var offset: u16 = 0;
+        for (self.instructions, 0..) |instr, i| {
+            if (offset == new_ip) {
+                self.cur_instruction_idx = i;
+                return;
             }
-
-            if (ip_tracker < 0 or ip_tracker > self.program_length) {
-                return error.JumpedOutsideValidRange;
-            }
+            offset += instr.size();
         }
-
-        self.cur_instruction_idx = idx;
+        return error.JumpedOutsideValidRange;
     }
 
     fn exec(self: *Simulator, op: BinaryOperation, T: type, dst: RegisterType, src: SrcType) !void {
@@ -178,7 +170,8 @@ fn opcodeToBinaryOp(opcode: Opcode) ?BinaryOperation {
 }
 
 const Jump = struct {
-    signed_offset: i8,
+    signed_offset: i8 = 0,
+    should_dec_cx: bool = false,
 };
 
 fn toJump(instruction: Instruction, regs: Registers) ?Jump {
@@ -190,7 +183,6 @@ fn toJump(instruction: Instruction, regs: Registers) ?Jump {
     };
 
     switch (instruction.op) {
-        // Conditional jumps based on flags
         .jo => if (flags.Overflow) return Jump{ .signed_offset = offset },
         .jno => if (!flags.Overflow) return Jump{ .signed_offset = offset },
         .jb_jnae => if (flags.Carry) return Jump{ .signed_offset = offset },
@@ -209,18 +201,27 @@ fn toJump(instruction: Instruction, regs: Registers) ?Jump {
         .jnle_jg => if (!flags.Zero and (flags.Sign == flags.Overflow)) return Jump{ .signed_offset = offset },
         .loopnz_loopne => {
             const cx = regs.getWord(.CX);
-            if (cx > 1 and !flags.Zero) return Jump{ .signed_offset = offset };
+            return Jump{
+                .signed_offset = if (cx > 1 and !flags.Zero) offset else 0,
+                .should_dec_cx = true,
+            };
         },
         .loopz_loope => {
             const cx = regs.getWord(.CX);
-            if (cx > 1 and flags.Zero) return Jump{ .signed_offset = offset };
+            return Jump{
+                .signed_offset = if (cx > 1 and flags.Zero) offset else 0,
+                .should_dec_cx = true,
+            };
         },
         .loop => {
             const cx = regs.getWord(.CX);
-            if (cx > 1) return Jump{ .signed_offset = offset };
+            return Jump{
+                .signed_offset = if (cx > 1) offset else 0,
+                .should_dec_cx = true,
+            };
         },
         .jcxz => if (regs.getWord(.CX) == 0) return Jump{ .signed_offset = offset },
-        else => return null, // no jump condition met
+        else => return null,
     }
 
     return Jump{ .signed_offset = 0 };
