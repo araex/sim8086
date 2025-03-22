@@ -21,6 +21,13 @@ pub fn decode(alloc: std.mem.Allocator, bin: []const u8) !std.ArrayList(Instruct
     while (true) {
         const instruction = decodeInstruction(&reader) catch |err| switch (err) {
             error.EndOfStream => break,
+            error.UnknownInstruction => {
+                std.log.err("Got unknown instruction. Parsed {d} sucessfully:\n", .{result.items.len});
+                for (result.items) |item| {
+                    std.log.err("{}", .{fmt(item)});
+                }
+                return error.UnknownInstruction;
+            },
             else => return err,
         };
         try result.append(instruction);

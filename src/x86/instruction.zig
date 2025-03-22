@@ -214,12 +214,6 @@ fn decodeImmediateToRegMem(op: Opcode, byte_1: u8, byte_2: u8, reader: *std.io.A
     std.debug.assert(mode != Mode.Reg);
     const rm = try decodeRM(mode, operates_on, 0b00000111, byte_2, reader);
 
-    // Special case for 8-bit displacement
-    if (mode == Mode.Mem8BitDisplacement) {
-        // Skip any padding bytes
-        _ = try reader.readByte();
-    }
-
     const immediate = try decodeImmediate(operates_on, try reader.readByte(), reader);
     return makeInstruction(op, operates_on, rm, immediate);
 }
@@ -254,12 +248,6 @@ fn decodeImmediateToRegMemWithExtensionInstruction(op: Opcode, byte_1: u8, byte_
     const sign_extension = (byte_1 & 0b00000010) != 0;
     const mode = decodeMode(0b11000000, byte_2);
     const rm = try decodeRM(mode, operates_on, 0b00000111, byte_2, reader);
-
-    // Special case for 8-bit displacement
-    if (mode == Mode.Mem8BitDisplacement) {
-        // Skip any padding bytes
-        _ = try reader.readByte();
-    }
 
     // Handle sign extension cases
     const immediate = if (sign_extension)

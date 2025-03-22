@@ -51,7 +51,7 @@
             "id": "sim8086Arg",
             "type": "promptString",
             "description": "Enter the argument for sim8086",
-            "default": "${workspaceFolder}/src/data/listing_0050_challenge_jumps"
+            "default": "${workspaceFolder}/src/data/listing_0051_memory_mov"
         }
     ]
 }

@@ -151,6 +151,19 @@ test "Homework - Listing 50" {
     try simulateListing("listing_0050_challenge_jumps", expected_regs);
 }
 
+test "Homework - Listing 51" {
+    const expected =
+        \\bx: 0x0001 (1)
+        \\cx: 0x0002 (2)
+        \\dx: 0x000a (10)
+        \\bp: 0x0004 (4)
+        \\ip: 0x0030 (48)
+    ;
+    var expected_regs = parseHomeworkResults(expected);
+    expected_regs.flags = .{};
+    try simulateListing("listing_0051_memory_mov", expected_regs);
+}
+
 fn parseHomeworkResults(comptime in: []const u8) x86_SimRegisters {
     var result = x86_SimRegisters{};
 

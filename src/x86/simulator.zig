@@ -1,7 +1,10 @@
 const assert = @import("std").debug.assert;
 const std = @import("std");
 
+const DstType = @import("operands.zig").DstType;
+const EffectiveAddressCalculation = @import("fields.zig").EffectiveAddressCalculation;
 const Instruction = @import("instruction.zig").Instruction;
+const MemoryOperand = @import("operands.zig").Memory;
 const Opcode = @import("opcodes.zig").Opcode;
 const OperatesOn = @import("fields.zig").OperatesOn;
 const RegisterType = @import("operands.zig").Register;
@@ -19,6 +22,7 @@ pub const Simulator = struct {
     program_length: u16,
 
     registers: Registers,
+    memory: Memory,
 
     pub fn init(instructions: []const Instruction) !Simulator {
         var byte_count: u16 = 0;
@@ -30,6 +34,7 @@ pub const Simulator = struct {
             .cur_instruction_idx = 0,
             .registers = .{},
             .program_length = byte_count,
+            .memory = .{},
         };
     }
 
@@ -40,15 +45,11 @@ pub const Simulator = struct {
         if (toJump(i, self.registers)) |jump| {
             return self.execJump(jump);
         }
-        if (opcodeToBinaryOp(i.op)) |bin_op| {
+        if (toBinaryOp(i.op)) |bin_op| {
             const src = i.src orelse return InstructionError.MissingSrcOperand;
-            switch (i.dst) {
-                .jump => return InstructionError.InvalidOperands,
-                .memory => return InstructionError.NotImplemented,
-                .register => |reg_dst| switch (i.wide) {
-                    .Byte => try self.exec(bin_op, u8, reg_dst, src),
-                    .Word => try self.exec(bin_op, u16, reg_dst, src),
-                },
+            switch (i.wide) {
+                .Byte => try self.exec(bin_op, u8, i.dst, src),
+                .Word => try self.exec(bin_op, u16, i.dst, src),
             }
             return;
         }
@@ -103,24 +104,20 @@ pub const Simulator = struct {
         return error.JumpedOutsideValidRange;
     }
 
-    fn exec(self: *Simulator, op: BinaryOperation, T: type, dst: RegisterType, src: SrcType) !void {
-        const operand_1 = self.registers.getAs(T, dst);
-        const operand_2 = try getValue(T, self.registers, src);
+    fn exec(self: *Simulator, op: BinaryOperation, T: type, dst: DstType, src: SrcType) !void {
+        const operand_1 = try self.getDstValue(T, dst);
+        const operand_2 = try self.getSrcValue(T, src);
         const result = switch (op) {
             .Add => @addWithOverflow(operand_1, operand_2),
             .Sub => @subWithOverflow(operand_1, operand_2),
             .Cmp => @subWithOverflow(operand_1, operand_2),
             .Mov => {
-                switch (T) {
-                    u8 => return self.registers.setByte(dst, operand_2),
-                    u16 => return self.registers.setWord(dst, operand_2),
-                    else => unreachable,
-                }
+                return self.setValue(T, dst, operand_2);
             },
         };
 
         if (op != .Cmp) {
-            self.registers.setAs(T, dst, result[0]);
+            try self.setValue(T, dst, result[0]);
         }
 
         const msb = (@as(T, 1) << (@bitSizeOf(T) - 1));
@@ -151,16 +148,48 @@ pub const Simulator = struct {
             },
         };
     }
+
+    fn getSrcValue(self: *const Simulator, T: type, src: SrcType) !T {
+        switch (src) {
+            .memory => |mem| return self.memory.getAs(T, calcMemAddress(mem, self.registers)),
+            .immediate => |imm| return imm.as(T),
+            .register => |reg_src| return switch (T) {
+                u8 => self.registers.getByte(reg_src),
+                u16 => self.registers.getWord(reg_src),
+                else => unreachable,
+            },
+        }
+    }
+
+    fn getDstValue(self: *const Simulator, T: type, dst: DstType) !T {
+        switch (dst) {
+            .register => |reg| return switch (T) {
+                u8 => self.registers.getByte(reg),
+                u16 => self.registers.getWord(reg),
+                else => unreachable,
+            },
+            .memory => |mem| return self.memory.getAs(T, calcMemAddress(mem, self.registers)),
+            .jump => return error.InvalidOperands,
+        }
+    }
+
+    fn setValue(self: *Simulator, T: type, dst: DstType, value: T) !void {
+        switch (dst) {
+            .register => |reg| return self.registers.setAs(T, reg, value),
+            .memory => |mem| return self.memory.setAs(T, calcMemAddress(mem, self.registers), value),
+            .jump => return error.InvalidOperands,
+        }
+    }
 };
 
 const BinaryOperation = enum { Add, Sub, Cmp, Mov };
 
-fn opcodeToBinaryOp(opcode: Opcode) ?BinaryOperation {
+fn toBinaryOp(opcode: Opcode) ?BinaryOperation {
     switch (opcode) {
         .add_rm_with_r_to_either, .add_imm_to_rm, .add_imm_to_acc => return .Add,
         .sub_rm_and_r_to_either, .sub_imm_to_rm, .sub_imm_to_acc => return .Sub,
         .cmp_rm_with_r, .cmp_imm_with_rm, .cmp_imm_with_acc => return .Cmp,
-        .mov_imm_to_r, .mov_rm_to_from_r, .mov_sr_to_rm, .mov_rm_to_sr => return .Mov,
+        .mov_imm_to_r, .mov_rm_to_from_r, .mov_sr_to_rm, .mov_rm_to_sr, .mov_imm_to_rm, .mov_mem_to_accumulator, .mov_accumulator_to_mem => return .Mov,
         else => return null,
     }
 }
@@ -223,15 +252,21 @@ fn toJump(instruction: Instruction, regs: Registers) ?Jump {
     return Jump{ .signed_offset = 0 };
 }
 
-fn getValue(T: type, regs: Registers, src: SrcType) !T {
-    switch (src) {
-        .memory => return InstructionError.NotImplemented,
-        .immediate => |imm| return imm.as(T),
-        .register => |reg_src| return switch (T) {
-            u8 => regs.getByte(reg_src),
-            u16 => regs.getWord(reg_src),
-            else => unreachable,
-        },
+fn calcMemAddress(mem: MemoryOperand, regs: Registers) u16 {
+    const offset = if (mem.displacement) |d| switch (d) {
+        .byte => d.byte,
+        .word => d.word,
+    } else 0;
+    switch (mem.calc) {
+        .BX_PLUS_SI => return regs.getWord(.BX) + regs.getWord(.SI) + offset,
+        .BX_PLUS_DI => return regs.getWord(.BX) + regs.getWord(.DI) + offset,
+        .BP_PLUS_SI => return regs.getWord(.BP) + regs.getWord(.SI) + offset,
+        .BP_PLUS_DI => return regs.getWord(.BP) + regs.getWord(.DI) + offset,
+        .SI => return regs.getWord(.SI) + offset,
+        .DI => return regs.getWord(.DI) + offset,
+        .BP => return regs.getWord(.BP) + offset,
+        .DIRECT_ADDRESS => return offset,
+        .BX => return regs.getWord(.BX) + offset,
     }
 }
 
@@ -425,6 +460,48 @@ pub const Registers = struct {
         switch (T) {
             u8 => return self.getByte(reg),
             u16 => return self.getWord(reg),
+            else => unreachable,
+        }
+    }
+};
+
+const Memory = struct {
+    // Not going to do segmented memory, 64k is all we can address
+    data: [65536]u8 = [_]u8{0} ** 65536,
+
+    pub fn setByte(self: *Memory, address: u16, value: u8) void {
+        self.data[address] = value;
+    }
+
+    pub fn setWord(self: *Memory, address: u16, value: u16) void {
+        const lo: u8 = @intCast(value & 0xFF);
+        const hi: u8 = @intCast((value >> 8) & 0xFF);
+        self.data[address] = lo;
+        self.data[address + 1] = hi;
+    }
+
+    pub fn setAs(self: *Memory, T: type, address: u16, value: T) void {
+        switch (T) {
+            u8 => self.data[address] = value,
+            u16 => self.setWord(address, value),
+            else => unreachable,
+        }
+    }
+
+    pub fn getByte(self: *const Memory, address: u16) u8 {
+        return self.data[address];
+    }
+
+    pub fn getWord(self: *const Memory, address: u16) u16 {
+        const lo: u16 = @as(u16, self.data[address]);
+        const hi: u16 = @as(u16, self.data[address + 1]) << 8;
+        return lo | hi;
+    }
+
+    pub fn getAs(self: *const Memory, T: type, address: u16) T {
+        switch (T) {
+            u8 => return self.data[address],
+            u16 => return self.getWord(address),
             else => unreachable,
         }
     }
