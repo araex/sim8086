@@ -143,7 +143,7 @@ pub const Memory = struct {
     displacement: ?Displacement,
 };
 
-pub const Register = enum { AL, CL, DL, BL, AH, CH, DH, BH, AX, CX, DX, BX, SP, BP, SI, DI, ES, CS, SS, DS };
+pub const Register = enum { AL, CL, DL, BL, AH, CH, DH, BH, AX, CX, DX, BX, SP, BP, SI, DI, ES, CS, SS, DS, IP };
 
 pub const ImmediateValueTag = enum {
     byte,

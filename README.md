@@ -3,7 +3,7 @@ Decode and simulate x8086 instructions with in a debug UI. Supports a very [limi
 Homework for https://computerenhance.com programming series.
 
 ## Prerequisites
-- zig >= 0.14.0
+- zig, tested with 0.15.0-dev.77+aa8aa6625
 
 To run the tests:
 - [`nasm`](https://en.wikipedia.org/wiki/Netwide_Assembler) in PATH

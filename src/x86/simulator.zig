@@ -15,21 +15,22 @@ const InstructionError = error{
 
 pub const Simulator = struct {
     instructions: []const Instruction,
-    cur_instruction: usize,
+    cur_instruction_idx: usize,
 
     registers: Registers,
 
     pub fn init(instructions: []const Instruction) !Simulator {
         return Simulator{
             .instructions = instructions,
-            .cur_instruction = 0,
+            .cur_instruction_idx = 0,
             .registers = .{},
         };
     }
 
     pub fn step(self: *Simulator) !void {
         const i = self.getCurrentInstruction();
-        defer self.cur_instruction += 1;
+        self.registers.setWord(.IP, self.registers.getWord(.IP) + i.size());
+        defer self.cur_instruction_idx += 1;
         if (opcodeToBinaryOp(i.op)) |bin_op| {
             const src = i.src orelse return InstructionError.MissingSrcOperand;
             switch (i.dst) {
@@ -62,7 +63,7 @@ pub const Simulator = struct {
     }
 
     pub fn reset(self: *Simulator) void {
-        self.cur_instruction = 0;
+        self.cur_instruction_idx = 0;
         self.registers = .{};
     }
 
@@ -72,11 +73,11 @@ pub const Simulator = struct {
 
     pub fn getCurrentInstruction(self: *const Simulator) Instruction {
         assert(isValidInstructionPointer(self));
-        return self.instructions[self.cur_instruction];
+        return self.instructions[self.cur_instruction_idx];
     }
 
     fn isValidInstructionPointer(self: *const Simulator) bool {
-        return self.cur_instruction < self.instructions.len;
+        return self.cur_instruction_idx < self.instructions.len;
     }
 
     const BinaryOperation = enum { Add, Sub, Cmp };
@@ -143,9 +144,8 @@ fn getValue(T: type, regs: Registers, src: SrcType) !T {
 }
 
 pub const Registers = struct {
-    // Register data is stored in a flat byte array
-    // The layout is [AX_LO, AX_HI, BX_LO, BX_HI, CX_LO, CX_HI, DX_LO, DX_HI, SP_LO, SP_HI, BP_LO, BP_HI, SI_LO, SI_HI, DI_LO, DI_HI, ES, CS, SS, DS]
-    data: [24]u8 = [_]u8{0} ** 24,
+    // [AX_LO, AX_HI, BX_LO, BX_HI, CX_LO, CX_HI, DX_LO, DX_HI, SP_LO, SP_HI, BP_LO, BP_HI, SI_LO, SI_HI, DI_LO, DI_HI, ES, CS, SS, DS, IP]
+    data: [26]u8 = [_]u8{0} ** 26,
 
     flags: struct {
         Carry: bool = false,
@@ -169,6 +169,7 @@ pub const Registers = struct {
     const CS_OFFSET = 18;
     const SS_OFFSET = 20;
     const DS_OFFSET = 22;
+    const IP_OFFSET = 24;
 
     // Set register value based on operation type
     pub fn set(self: *Registers, operates_on: OperatesOn, dst: RegisterType, value: u16) void {
@@ -201,6 +202,7 @@ pub const Registers = struct {
             .CS => self.data[CS_OFFSET] = value,
             .SS => self.data[SS_OFFSET] = value,
             .DS => self.data[DS_OFFSET] = value,
+            .IP => self.data[IP_OFFSET] = value,
         }
     }
 
@@ -259,6 +261,10 @@ pub const Registers = struct {
                 self.data[DS_OFFSET] = lo;
                 self.data[DS_OFFSET + 1] = hi;
             },
+            .IP => {
+                self.data[IP_OFFSET] = lo;
+                self.data[IP_OFFSET + 1] = hi;
+            },
             else => unreachable,
         }
     }
@@ -294,6 +300,7 @@ pub const Registers = struct {
             .CS => return self.data[CS_OFFSET],
             .SS => return self.data[SS_OFFSET],
             .DS => return self.data[DS_OFFSET],
+            .IP => return self.data[IP_OFFSET],
         }
     }
 
@@ -315,6 +322,7 @@ pub const Registers = struct {
             .CS => offset = CS_OFFSET,
             .SS => offset = SS_OFFSET,
             .DS => offset = DS_OFFSET,
+            .IP => offset = IP_OFFSET,
             else => unreachable,
         }
 

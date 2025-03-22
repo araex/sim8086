@@ -14,11 +14,13 @@ const Direction = @import("fields.zig").Direction;
 const Displacement = @import("fields.zig").Displacement;
 const DstType = @import("operands.zig").DstType;
 const EffectiveAddressCalculation = @import("fields.zig").EffectiveAddressCalculation;
+const getOpcodeSize = @import("opcodes.zig").getOpcodeSize;
 const makeDst = @import("operands.zig").makeDst;
 const makeSrc = @import("operands.zig").makeSrc;
 const Memory = @import("operands.zig").Memory;
 const Mode = @import("fields.zig").Mode;
 const Opcode = @import("opcodes.zig").Opcode;
+const OpcodeSize = @import("opcodes.zig").OpcodeSize;
 const OperatesOn = @import("fields.zig").OperatesOn;
 const Register = @import("operands.zig").Register;
 const SrcType = @import("operands.zig").SrcType;
@@ -28,6 +30,57 @@ pub const Instruction = struct {
     wide: OperatesOn,
     src: ?SrcType,
     dst: DstType,
+
+    // Computes the total size of an instruction in bytes
+    pub fn size(self: *const Instruction) u4 {
+        const opsize = getOpcodeSize(self.op);
+        var total_size = opsize;
+
+        switch (self.dst) {
+            .register => {},
+            .memory => |mem| {
+                switch (mem.calc) {
+                    .DIRECT_ADDRESS => total_size += if (self.wide == .Byte) 1 else 2,
+                    else => {
+                        if (mem.displacement) |disp| {
+                            switch (disp) {
+                                .byte => total_size += 1,
+                                .word => total_size += 2,
+                            }
+                        }
+                    },
+                }
+            },
+            .jump => total_size += 1, // 8-bit signed displacement
+        }
+
+        if (self.src) |src| {
+            switch (src) {
+                .register => {},
+                .memory => |mem| {
+                    switch (mem.calc) {
+                        .DIRECT_ADDRESS => total_size += if (self.wide == .Byte) 1 else 2,
+                        else => {
+                            if (mem.displacement) |disp| {
+                                switch (disp) {
+                                    .byte => total_size += 1,
+                                    .word => total_size += 2,
+                                }
+                            }
+                        },
+                    }
+                },
+                .immediate => |imm| {
+                    switch (imm.value) {
+                        .byte => total_size += 1,
+                        .word => total_size += 2,
+                    }
+                },
+            }
+        }
+
+        return total_size;
+    }
 };
 
 pub fn makeInstruction(op: Opcode, operates_on: OperatesOn, dst: anytype, src: anytype) Instruction {
@@ -174,7 +227,7 @@ fn decodeMemToFromAccumulator(op: Opcode, byte_1: u8, byte_2: u8, reader: *std.i
 }
 
 fn decodeImmediateToRegMemWithExtensionInstruction(op: Opcode, byte_1: u8, byte_2: u8, reader: *std.io.AnyReader) !Instruction {
-    // Format: | 8x S W | MOD reg R/M | [DISP] | IMM | S=sign ext, W=width
+    // Format: | OP S W | MOD 000 R/M | [DISP] | IMM | S=sign ext, W=width
     const operates_on = decodeOperatesOn(0b00000001, byte_1);
     const sign_extension = (byte_1 & 0b00000010) != 0;
     const mode = decodeMode(0b11000000, byte_2);

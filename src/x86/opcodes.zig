@@ -122,6 +122,26 @@ const OpcodeExtension = struct {
     opcode: Opcode,
 };
 
+// Opcode size lookup table
+pub fn getOpcodeSize(op: Opcode) u4 {
+    return switch (op) {
+        // Register/memory to/from register instructions: 1 byte opcode + ModR/M
+        .add_rm_with_r_to_either, .sub_rm_and_r_to_either, .cmp_rm_with_r, .mov_rm_to_from_r, .mov_sr_to_rm, .mov_rm_to_sr, .add_imm_to_rm, .sub_imm_to_rm, .cmp_imm_with_rm, .mov_imm_to_rm => return 2,
+
+        // compact mov
+        .mov_mem_to_accumulator, .mov_accumulator_to_mem, .mov_imm_to_r => return 1,
+
+        // Compact arithmetic
+        .add_imm_to_acc, .sub_imm_to_acc, .cmp_imm_with_acc => return 1,
+
+        // Jumps
+        .jo, .jno, .jb_jnae, .jnb_jae, .je_jz, .jne_jnz, .jbe_jna, .jnbe_ja, .js, .jns, .jp_jpe, .jnp_jpo, .jl_jnge, .jnl_jge, .jle_jng, .jnle_jg, .loopnz_loopne, .loopz_loope, .loop, .jcxz => return 1,
+
+        // Unknown opcode
+        .Unknown => return 0,
+    };
+}
+
 pub const Opcode = enum {
     Unknown,
     mov_rm_to_from_r,

@@ -9,7 +9,7 @@ comptime {
     std.debug.assert(@hasDecl(dvui.backend, "SDLBackend"));
 }
 
-const num_registers = 12;
+const num_registers = 13;
 const State = struct {
     // The simulator
     sim: *x86.Simulator,
@@ -93,8 +93,21 @@ const State = struct {
         _ = std.fmt.bufPrintZ(self.register_strings[9], "{X:0>4}", .{regs.getWord(.CS)}) catch {};
         _ = std.fmt.bufPrintZ(self.register_strings[10], "{X:0>4}", .{regs.getWord(.SS)}) catch {};
         _ = std.fmt.bufPrintZ(self.register_strings[11], "{X:0>4}", .{regs.getWord(.DS)}) catch {};
+        _ = std.fmt.bufPrintZ(self.register_strings[12], "{X:0>4}", .{regs.getWord(.IP)}) catch {};
     }
 };
+
+fn optionTextDim() dvui.Options {
+    const opt_text_dim = dvui.Options{ .color_text = dvui.Options.ColorOrName{
+        .color = dvui.Color.average(dvui.themeGet().color_text, dvui.themeGet().color_fill_control),
+    } };
+    return opt_text_dim;
+}
+
+fn optionTextBold() dvui.Options {
+    const opt_text_bold = dvui.Options{ .font_style = .heading };
+    return opt_text_bold;
+}
 
 pub fn run(alloc: std.mem.Allocator, simulator: *x86.Simulator) !void {
     if (@import("builtin").os.tag == .windows) {
@@ -165,10 +178,17 @@ fn draw_asm(state: *State) !void {
         .{ .expand = .horizontal },
     );
     defer tl_asm.deinit();
-    const prefix_normal = "  ";
-    const prefix_current = "> ";
+    try tl_asm.addText("IP     instruction\n", optionTextDim());
+
+    const prefix_normal = "   ";
+    const prefix_current = " > ";
+    var ip: u16 = 0;
+    var ip_string_buf = [_]u8{' '} ** 4;
     for (state.instr_asm, 0..) |line, i| {
-        if (i == state.sim.cur_instruction) {
+        const is_current_instruction = i == state.sim.cur_instruction_idx;
+        const formatted = try std.fmt.bufPrint(&ip_string_buf, "{X:0>4}", .{ip});
+        try tl_asm.addText(formatted, if (is_current_instruction) optionTextBold() else optionTextDim());
+        if (is_current_instruction) {
             try tl_asm.addText(prefix_current, .{});
             try tl_asm.addText(line, .{
                 .font_style = .heading,
@@ -182,6 +202,8 @@ fn draw_asm(state: *State) !void {
         if (i < state.instr_asm.len - 1) {
             try tl_asm.addText("\n", .{});
         }
+
+        ip += state.sim.instructions[i].size();
     }
 }
 
@@ -192,17 +214,12 @@ fn draw_registers(state: *State) !void {
     var vbox = try dvui.box(@src(), .vertical, .{});
     defer vbox.deinit();
 
-    const opt_dim = dvui.Options{ .color_text = dvui.Options.ColorOrName{
-        .color = dvui.Color.average(dvui.themeGet().color_text, dvui.themeGet().color_fill_control),
-    } };
-
-    const opt_bold = dvui.Options{ .font_style = .heading };
+    const reg_names = [num_registers][:0]const u8{ "AX ", "BX ", "CX ", "DX ", "SP ", "BP ", "SI ", "DI ", "ES ", "CS ", "SS ", "DS ", "IP " };
+    const ip_idx = 12;
 
     {
         var hbox = try dvui.box(@src(), .horizontal, .{});
         defer hbox.deinit();
-
-        const reg_names = [num_registers][:0]const u8{ "AX ", "BX ", "CX ", "DX ", "SP ", "BP ", "SI ", "DI ", "ES ", "CS ", "SS ", "DS " };
 
         // First column (AX, BX, CX, DX)
         {
@@ -210,8 +227,8 @@ fn draw_registers(state: *State) !void {
             defer tl.deinit();
 
             for (0..4) |i| {
-                try tl.addText(reg_names[i], opt_dim);
-                try tl.addText(state.register_strings[i], opt_bold);
+                try tl.addText(reg_names[i], optionTextDim());
+                try tl.addText(state.register_strings[i], optionTextBold());
                 if (i < 3) {
                     try tl.addText("\n", .{});
                 }
@@ -224,8 +241,8 @@ fn draw_registers(state: *State) !void {
             defer tl.deinit();
 
             for (4..8) |i| {
-                try tl.addText(reg_names[i], opt_dim);
-                try tl.addText(state.register_strings[i], opt_bold);
+                try tl.addText(reg_names[i], optionTextDim());
+                try tl.addText(state.register_strings[i], optionTextBold());
                 if (i < 7) {
                     try tl.addText("\n", .{});
                 }
@@ -238,8 +255,8 @@ fn draw_registers(state: *State) !void {
             defer tl.deinit();
 
             for (8..12) |i| {
-                try tl.addText(reg_names[i], opt_dim);
-                try tl.addText(state.register_strings[i], opt_bold);
+                try tl.addText(reg_names[i], optionTextDim());
+                try tl.addText(state.register_strings[i], optionTextBold());
                 if (i < 11) {
                     try tl.addText("\n", .{});
                 }
@@ -250,7 +267,7 @@ fn draw_registers(state: *State) !void {
     {
         var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal });
         defer tl.deinit();
-        try tl.addText("C P A Z S O\n", opt_dim);
+        try tl.addText("C P A Z S O\n", optionTextDim());
 
         const flag_values = [_]bool{
             state.sim.registers.flags.Carry,
@@ -262,8 +279,16 @@ fn draw_registers(state: *State) !void {
         };
 
         for (flag_values) |flag| {
-            try tl.addText(if (flag) "1 " else "0 ", if (flag) opt_bold else opt_dim);
+            try tl.addText(if (flag) "1 " else "0 ", if (flag) optionTextBold() else optionTextDim());
         }
+    }
+
+    {
+        var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal });
+        defer tl.deinit();
+
+        try tl.addText(reg_names[ip_idx], optionTextDim());
+        try tl.addText(state.register_strings[ip_idx], optionTextBold());
     }
 }
 

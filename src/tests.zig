@@ -37,6 +37,8 @@ test "Homework - Listing 43" {
         \\bp: 0x0006 (6)
         \\si: 0x0007 (7)
         \\di: 0x0008 (8)
+        \\ip: 0x0018 (24) 
+        \\
     ;
     try simulateListing("listing_0043_immediate_movs", parseHomeworkResults(expected));
 }
@@ -51,6 +53,7 @@ test "Homework - Listing 44" {
         \\bp: 0x0002 (2)
         \\si: 0x0003 (3)
         \\di: 0x0004 (4)
+        \\ip: 0x001c (28)
     ;
     try simulateListing("listing_0044_register_movs", parseHomeworkResults(expected));
 }
@@ -68,6 +71,7 @@ test "Homework - Listing 45" {
         \\es: 0x6677 (26231)
         \\ss: 0x4411 (17425)
         \\ds: 0x3344 (13124)
+        \\ip: 0x002C (44)
     ;
     try simulateListing("listing_0045_challenge_register_movs", parseHomeworkResults(expected));
 }
@@ -77,6 +81,7 @@ test "Homework - Listing 46" {
         \\bx: 0xe102 (57602)
         \\cx: 0x0f01 (3841)
         \\sp: 0x03e6 (998)
+        \\ip: 0x0018 (24)
     ;
     var expected_regs = parseHomeworkResults(expected);
     expected_regs.flags = .{
@@ -92,6 +97,7 @@ test "Homework - Listing 47" {
         \\dx: 0x000a (10)
         \\sp: 0x0063 (99)
         \\bp: 0x0062 (98)
+        \\ip: 0x002d (45)
     ;
     var expected_regs = parseHomeworkResults(expected);
     expected_regs.flags = .{
@@ -101,6 +107,20 @@ test "Homework - Listing 47" {
         .Sign = true,
     };
     try simulateListing("listing_0047_challenge_flags", expected_regs);
+}
+
+test "Homework - Listing 48" {
+    const expected =
+        \\bx: 0x07d0 (2000)
+        \\cx: 0xfce0 (64736)
+        \\ip: 0x000e (14)
+    ;
+    var expected_regs = parseHomeworkResults(expected);
+    expected_regs.flags = .{
+        .Carry = true,
+        .Sign = true,
+    };
+    try simulateListing("listing_0048_ip_register", expected_regs);
 }
 
 fn parseHomeworkResults(comptime in: []const u8) x86_SimRegisters {
@@ -149,6 +169,8 @@ fn parseHomeworkResults(comptime in: []const u8) x86_SimRegisters {
             result.setWord(.SS, value);
         } else if (std.mem.eql(u8, reg_name, "ds")) {
             result.setWord(.DS, value);
+        } else if (std.mem.eql(u8, reg_name, "ip")) {
+            result.setWord(.IP, value);
         }
     }
 
@@ -186,15 +208,17 @@ test "Simulator Testbench" {
 
     var expected_registers = x86_SimRegisters{};
     var sim = try x86.Simulator.init(instructions.items);
-    try std.testing.expectEqual(0, sim.cur_instruction);
+    try std.testing.expectEqual(0, sim.cur_instruction_idx);
     try expectEqualRegisters(expected_registers, sim.registers);
 
     expected_registers.setByte(.AL, 7);
+    expected_registers.setWord(.IP, 2);
     expected_registers.flags = .{};
     try sim.step();
     try expectEqualRegisters(expected_registers, sim.registers);
 
     expected_registers.setByte(.AL, 0);
+    expected_registers.setWord(.IP, 4);
     expected_registers.flags = .{
         .Parity = true,
         .Zero = true,
@@ -277,32 +301,18 @@ fn testDecodeEncodeListing(comptime listing_file_name: []const u8) !void {
 }
 
 fn expectEqualRegisters(expected: x86_SimRegisters, actual: x86_SimRegisters) !void {
-    errdefer {
-        if (!std.meta.eql(expected.data, actual.data)) {
-            std.log.err("Printing register...\nAL AH BL BH CL CH DL DH|-SP--|-BP--|-SI--|-DI--|", .{});
-            std.testing.expectEqualSlices(u8, expected.data[0..16], actual.data[0..16]) catch {};
+    if (!std.meta.eql(expected.data, actual.data)) {
+        std.log.err("Found register diff. Printing register diff...\nAL AH BL BH CL CH DL DH|-SP--|-BP--|-SI--|-DI--|", .{});
+        std.testing.expectEqualSlices(u8, expected.data[0..16], actual.data[0..16]) catch {};
 
-            std.log.err("Printing segment register...\n-ES--|-CS--|-SS--|-DS--|", .{});
-            std.testing.expectEqualSlices(u8, expected.data[16..], actual.data[16..]) catch {};
-        }
+        std.log.err("Printing segment register diff...\n-ES--|-CS--|-SS--|-DS--|", .{});
+        std.testing.expectEqualSlices(u8, expected.data[16..24], actual.data[16..24]) catch {};
+
+        std.log.err("Printing instruction pointer diff...", .{});
+        // std.testing.expectEqualSlices(u8, expected.data[24..], actual.data[24..]) catch {};
+        std.testing.expectEqual(expected.getWord(.IP), actual.getWord(.IP)) catch {};
+        return error.TestExpectedEqual;
     }
-    try std.testing.expectEqual(expected.getByte(.AL), actual.getByte(.AL));
-    try std.testing.expectEqual(expected.getByte(.AH), actual.getByte(.AH));
-    try std.testing.expectEqual(expected.getByte(.BL), actual.getByte(.BL));
-    try std.testing.expectEqual(expected.getByte(.BH), actual.getByte(.BH));
-    try std.testing.expectEqual(expected.getByte(.CL), actual.getByte(.CL));
-    try std.testing.expectEqual(expected.getByte(.CH), actual.getByte(.CH));
-    try std.testing.expectEqual(expected.getByte(.DL), actual.getByte(.DL));
-    try std.testing.expectEqual(expected.getByte(.DH), actual.getByte(.DH));
-
-    try std.testing.expectEqual(expected.getWord(.AX), actual.getWord(.AX));
-    try std.testing.expectEqual(expected.getWord(.BX), actual.getWord(.BX));
-    try std.testing.expectEqual(expected.getWord(.CX), actual.getWord(.CX));
-    try std.testing.expectEqual(expected.getWord(.DX), actual.getWord(.DX));
-    try std.testing.expectEqual(expected.getWord(.SP), actual.getWord(.SP));
-    try std.testing.expectEqual(expected.getWord(.BP), actual.getWord(.BP));
-    try std.testing.expectEqual(expected.getWord(.SI), actual.getWord(.SI));
-    try std.testing.expectEqual(expected.getWord(.DI), actual.getWord(.DI));
 
     var any_flag_diff = false;
     if (expected.flags.Parity != actual.flags.Parity) {
