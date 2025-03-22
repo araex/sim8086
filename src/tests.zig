@@ -164,6 +164,23 @@ test "Homework - Listing 51" {
     try simulateListing("listing_0051_memory_mov", expected_regs);
 }
 
+test "Homework - Listing 52" {
+    const expected =
+        \\bx: 0x0006 (6)
+        \\cx: 0x0004 (4)
+        \\dx: 0x0006 (6)
+        \\bp: 0x03e8 (1000)
+        \\si: 0x0006 (6)
+        \\ip: 0x0023 (35)
+    ;
+    var expected_regs = parseHomeworkResults(expected);
+    expected_regs.flags = .{
+        .Parity = true,
+        .Zero = true,
+    };
+    try simulateListing("listing_0052_memory_add_loop", expected_regs);
+}
+
 fn parseHomeworkResults(comptime in: []const u8) x86_SimRegisters {
     var result = x86_SimRegisters{};
 
