@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 
 const dvui = @import("dvui");
 
+const hexViewer = @import("hex_viewer.zig").hexViewer;
 const x86 = @import("x86.zig");
 
 comptime {
@@ -366,7 +367,14 @@ fn draw_ui(state: *State) !void {
         try draw_registers(state);
     }
     try draw_controls(state);
-    try draw_asm(state);
+
+    {
+        var hbox = try dvui.box(@src(), .horizontal, .{});
+        defer hbox.deinit();
+
+        try draw_asm(state);
+        try hexViewer(@src(), state.sim.memory, .{});
+    }
 
     const label = if (dvui.Examples.show_demo_window) "Hide Demo Window" else "Show Demo Window";
     if (try dvui.button(@src(), label, .{}, .{})) {

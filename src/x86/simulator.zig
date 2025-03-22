@@ -465,7 +465,7 @@ pub const Registers = struct {
     }
 };
 
-const Memory = struct {
+pub const Memory = struct {
     // Not going to do segmented memory, 64k is all we can address
     data: [65536]u8 = [_]u8{0} ** 65536,
 
