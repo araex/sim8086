@@ -136,6 +136,21 @@ test "Homework - Listing 49" {
     try simulateListing("listing_0049_conditional_jumps", expected_regs);
 }
 
+test "Homework - Listing 50" {
+    const expected =
+        \\ax: 0x000d (13)
+        \\bx: 0xfffb (65531)
+        \\ip: 0x001c (28)
+    ;
+    var expected_regs = parseHomeworkResults(expected);
+    expected_regs.flags = .{
+        .Carry = true,
+        .AuxCarry = true,
+        .Sign = true,
+    };
+    try simulateListing("listing_0050_challenge_jumps", expected_regs);
+}
+
 fn parseHomeworkResults(comptime in: []const u8) x86_SimRegisters {
     var result = x86_SimRegisters{};
 

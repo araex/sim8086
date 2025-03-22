@@ -53,23 +53,8 @@ pub const Simulator = struct {
             return;
         }
 
-        switch (i.op) {
-            .mov_imm_to_r, .mov_rm_to_from_r, .mov_sr_to_rm, .mov_rm_to_sr => {
-                const src = i.src orelse return InstructionError.MissingSrcOperand;
-                switch (i.dst) {
-                    .jump => return InstructionError.InvalidOperands,
-                    .memory => return InstructionError.NotImplemented,
-                    .register => |reg_dst| switch (i.wide) {
-                        .Byte => self.registers.setByte(reg_dst, try getValue(u8, self.registers, src)),
-                        .Word => self.registers.setWord(reg_dst, try getValue(u16, self.registers, src)),
-                    },
-                }
-            },
-            else => {
-                std.log.err("Instruction '{s}'' not implemented ", .{@tagName(i.op)});
-                return InstructionError.NotImplemented;
-            },
-        }
+        std.log.err("Instruction '{s}'' not implemented ", .{@tagName(i.op)});
+        return InstructionError.NotImplemented;
     }
 
     pub fn reset(self: *Simulator) void {
@@ -125,6 +110,13 @@ pub const Simulator = struct {
             .Add => @addWithOverflow(operand_1, operand_2),
             .Sub => @subWithOverflow(operand_1, operand_2),
             .Cmp => @subWithOverflow(operand_1, operand_2),
+            .Mov => {
+                switch (T) {
+                    u8 => return self.registers.setByte(dst, operand_2),
+                    u16 => return self.registers.setWord(dst, operand_2),
+                    else => unreachable,
+                }
+            },
         };
 
         if (op != .Cmp) {
@@ -140,6 +132,7 @@ pub const Simulator = struct {
             .Carry = switch (op) {
                 .Add => result[1] == 1, // unsigned overflow
                 .Sub, .Cmp => operand_1 < operand_2,
+                .Mov => unreachable,
             },
             // "the parity flag reflects the parity of only the least significant byte"
             // https://en.wikipedia.org/wiki/Parity_flag#x86_processors
@@ -147,24 +140,27 @@ pub const Simulator = struct {
             .AuxCarry = switch (op) {
                 .Add => ((operand_1 & 0xF) + (operand_2 & 0xF)) > 0xF,
                 .Sub, .Cmp => (operand_1 & 0xF) < (operand_2 & 0xF),
+                .Mov => unreachable,
             },
             .Zero = (result[0] == 0),
             .Sign = result_sign,
             .Overflow = switch (op) {
                 .Add => (op1_sign == op2_sign) and (result_sign != op1_sign),
                 .Sub, .Cmp => (op1_sign != op2_sign) and (result_sign != op1_sign),
+                .Mov => unreachable,
             },
         };
     }
 };
 
-const BinaryOperation = enum { Add, Sub, Cmp };
+const BinaryOperation = enum { Add, Sub, Cmp, Mov };
 
 fn opcodeToBinaryOp(opcode: Opcode) ?BinaryOperation {
     switch (opcode) {
         .add_rm_with_r_to_either, .add_imm_to_rm, .add_imm_to_acc => return .Add,
         .sub_rm_and_r_to_either, .sub_imm_to_rm, .sub_imm_to_acc => return .Sub,
         .cmp_rm_with_r, .cmp_imm_with_rm, .cmp_imm_with_acc => return .Cmp,
+        .mov_imm_to_r, .mov_rm_to_from_r, .mov_sr_to_rm, .mov_rm_to_sr => return .Mov,
         else => return null,
     }
 }
