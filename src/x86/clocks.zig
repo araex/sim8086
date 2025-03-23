@@ -14,13 +14,13 @@ pub fn estimate(instruction: Instruction) !u8 {
                     switch (src) {
                         .register => return 3,
                         .immediate => return 4,
-                        .memory => |src_mem| return 9 + eac(src_mem),
+                        .memory => |src_mem| return 9 + eac(src_mem) + transfers(src_mem, 1),
                     }
                 },
                 .memory => |dst_mem| {
                     switch (src) {
-                        .register => return 16 + eac(dst_mem),
-                        .immediate => return 17 + eac(dst_mem),
+                        .register => return 16 + eac(dst_mem) + transfers(dst_mem, 2),
+                        .immediate => return 17 + eac(dst_mem) + transfers(dst_mem, 2),
                         .memory => return SimError.InvalidOperands,
                     }
                 },
@@ -34,13 +34,13 @@ pub fn estimate(instruction: Instruction) !u8 {
                     switch (src) {
                         .register => return 3,
                         .immediate => return 4,
-                        .memory => |src_mem| return 9 + eac(src_mem),
+                        .memory => |src_mem| return 9 + eac(src_mem) + transfers(src_mem, 1),
                     }
                 },
                 .memory => |dst_mem| {
                     switch (src) {
-                        .register => return 9 + eac(dst_mem),
-                        .immediate => return 10 + eac(dst_mem),
+                        .register => return 9 + eac(dst_mem) + transfers(dst_mem, 1),
+                        .immediate => return 10 + eac(dst_mem) + transfers(dst_mem, 1),
                         .memory => return SimError.InvalidOperands,
                     }
                 },
@@ -56,9 +56,9 @@ pub fn estimate(instruction: Instruction) !u8 {
                         .immediate => return 4,
                         .memory => |src_mem| {
                             if (Register.isAccumulator(dst_reg)) {
-                                return 10;
+                                return 10 + transfers(src_mem, 1);
                             }
-                            return 8 + eac(src_mem);
+                            return 8 + eac(src_mem) + transfers(src_mem, 1);
                         },
                     }
                 },
@@ -66,11 +66,11 @@ pub fn estimate(instruction: Instruction) !u8 {
                     switch (src) {
                         .register => |src_reg| {
                             if (Register.isAccumulator(src_reg)) {
-                                return 10;
+                                return 10 + transfers(dst_mem, 1);
                             }
-                            return 9 + eac(dst_mem);
+                            return 9 + eac(dst_mem) + transfers(dst_mem, 1);
                         },
-                        .immediate => return 10 + eac(dst_mem),
+                        .immediate => return 10 + eac(dst_mem) + transfers(dst_mem, 1),
                         .memory => return SimError.InvalidOperands,
                     }
                 },
@@ -82,11 +82,45 @@ pub fn estimate(instruction: Instruction) !u8 {
 }
 
 fn eac(op: MemoryOperand) u8 {
-    const displacement_base_cost: u8 = if (op.displacement) |d| if (d.isZero()) 0 else 4 else 0;
+    const displacement_cost: u8 = blk: {
+        if (op.displacement) |d| {
+            switch (d) {
+                .byte => |b| {
+                    break :blk if (b == 0) 0 else 4;
+                },
+                .word => |w| {
+                    break :blk if (w == 0) 0 else 4;
+                },
+            }
+        }
+        break :blk 0;
+    };
+
     switch (op.calc) {
         .DIRECT_ADDRESS => return 6,
-        .SI, .DI, .BP, .BX => return 5 + displacement_base_cost,
-        .BP_PLUS_DI, .BX_PLUS_SI => return 7 + displacement_base_cost,
-        .BP_PLUS_SI, .BX_PLUS_DI => return 8 + displacement_base_cost,
+        .SI, .DI, .BP, .BX => return 5 + displacement_cost,
+        .BP_PLUS_DI, .BX_PLUS_SI => return 7 + displacement_cost,
+        .BP_PLUS_SI, .BX_PLUS_DI => return 8 + displacement_cost,
     }
+}
+
+fn transfers(op: MemoryOperand, num_transfers: u8) u8 {
+    if (num_transfers == 0) {
+        return 0;
+    }
+
+    const at_odd_address: bool = blk: {
+        if (op.displacement) |d| {
+            switch (d) {
+                .byte => break :blk false,
+                .word => |w| break :blk @mod(w, 2) == 1,
+            }
+        }
+        break :blk false;
+    };
+    if (!at_odd_address) {
+        return 0;
+    }
+
+    return num_transfers * 4;
 }

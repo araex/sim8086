@@ -235,6 +235,21 @@ test "Homework - Listing 56" {
     try simulateListing("listing_0056_estimating_cycles", expected_regs, 192);
 }
 
+test "Homework - Listing 57" {
+    const expected =
+        \\bx: 0x03e8 (1000)
+        \\bp: 0x07d0 (2000)
+        \\si: 0x0bb8 (3000)
+        \\di: 0x0fa0 (4000)
+        \\ip: 0x0036 (54)
+    ;
+    var expected_regs = parseHomeworkResults(expected);
+    expected_regs.flags = .{
+        .AuxCarry = true,
+    };
+    try simulateListing("listing_0057_challenge_cycles", expected_regs, 289);
+}
+
 fn parseHomeworkResults(comptime in: []const u8) x86.Registers {
     var result = x86.Registers{};
 

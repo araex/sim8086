@@ -212,8 +212,13 @@ fn drawAsm(state: *State) !void {
         const estimate = x86.clocks.estimate(instruction) catch blk: {
             break :blk 0xFF;
         };
-        try tl_clks.format("{d: >3}\n", .{estimate}, .{});
-        estimate_total += estimate;
+
+        if (estimate == 0xFF) {
+            try tl_clks.addText("???\n", theme.optionTextDim());
+        } else {
+            try tl_clks.format("{d: >3}\n", .{estimate}, .{});
+            estimate_total += estimate;
+        }
     }
     try tl_clks.format("{d: >3}", .{estimate_total}, .{});
 }
