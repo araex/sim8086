@@ -180,6 +180,36 @@ test "Homework - Listing 52" {
     try simulateListing("listing_0052_memory_add_loop", expected_regs);
 }
 
+test "Homework - Listing 53" {
+    const expected =
+        \\bx: 0x0006 (6)
+        \\dx: 0x0006 (6)
+        \\bp: 0x03e6 (998)
+        \\ip: 0x0021 (33)
+    ;
+    var expected_regs = parseHomeworkResults(expected);
+    expected_regs.flags = .{
+        .Parity = true,
+        .Zero = true,
+    };
+    try simulateListing("listing_0053_add_loop_challenge", expected_regs);
+}
+
+test "Homework - Listing 54" {
+    const expected =
+        \\cx: 0x0040 (64)
+        \\dx: 0x0040 (64)
+        \\bp: 0x4100 (16640)
+        \\ip: 0x0026 (38)
+    ;
+    var expected_regs = parseHomeworkResults(expected);
+    expected_regs.flags = .{
+        .Parity = true,
+        .Zero = true,
+    };
+    try simulateListing("listing_0054_draw_rectangle", expected_regs);
+}
+
 fn parseHomeworkResults(comptime in: []const u8) x86.Registers {
     var result = x86.Registers{};
 
