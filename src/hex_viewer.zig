@@ -45,7 +45,7 @@ pub fn hexViewer(_: std.builtin.SourceLocation, sim: x86.Simulator) !void {
         defer tl.deinit();
         for (0..numRowsToShow) |i| {
             const addr: usize = row_start + i * bytesPerRow;
-            try tl.format("0x{X:0<4} ", .{addr}, theme.optionTextDim());
+            try tl.format("0x{X:0>4} ", .{addr}, theme.optionTextDim());
 
             if (addr < sim.memory.data.len) {
                 const row_data = sim.memory.data[addr..@min(addr + bytesPerRow, sim.memory.data.len)];
