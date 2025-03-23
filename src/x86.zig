@@ -1,5 +1,6 @@
 const std = @import("std");
 
+pub const clocks = @import("x86/clocks.zig");
 pub const decode = @import("x86/decode.zig");
 pub const fmt = @import("x86/format.zig").fmt;
 pub const Instruction = @import("x86/instruction.zig").Instruction;
@@ -14,6 +15,7 @@ pub const Memory = @import("x86/memory.zig").Memory;
 pub const RegisterName = @import("x86/register.zig").RegisterName;
 pub const Registers = @import("x86/register.zig").Registers;
 pub const Simulator = @import("x86/simulator.zig").Simulator;
+pub const SimError = @import("x86/simulator.zig").SimError;
 pub const size = @import("x86/size.zig");
 
 pub fn toInstructionList(alloc: std.mem.Allocator, bin: []const u8) !std.ArrayList(Instruction) {

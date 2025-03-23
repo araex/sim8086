@@ -12,7 +12,7 @@ const size = @import("size.zig");
 const SrcOperand = @import("instruction.zig").SrcOperand;
 const Width = @import("instruction.zig").Width;
 
-const SimError = error{
+pub const SimError = error{
     InvalidOperands,
     MissingSrcOperand,
     NotImplemented,

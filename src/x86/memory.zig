@@ -62,4 +62,11 @@ pub const EffectiveAddressCalculation = enum {
 pub const Displacement = union(enum) {
     byte: u8,
     word: u16,
+
+    pub fn isZero(self: Displacement) bool {
+        switch (self) {
+            .byte => |b| return b == 0,
+            .word => |w| return w == 0,
+        }
+    }
 };

@@ -39,7 +39,7 @@ test "Homework - Listing 43" {
         \\ip: 0x0018 (24) 
         \\
     ;
-    try simulateListing("listing_0043_immediate_movs", parseHomeworkResults(expected));
+    try simulateListing("listing_0043_immediate_movs", parseHomeworkResults(expected), null);
 }
 
 test "Homework - Listing 44" {
@@ -54,7 +54,7 @@ test "Homework - Listing 44" {
         \\di: 0x0004 (4)
         \\ip: 0x001c (28)
     ;
-    try simulateListing("listing_0044_register_movs", parseHomeworkResults(expected));
+    try simulateListing("listing_0044_register_movs", parseHomeworkResults(expected), null);
 }
 
 test "Homework - Listing 45" {
@@ -72,7 +72,7 @@ test "Homework - Listing 45" {
         \\ds: 0x3344 (13124)
         \\ip: 0x002C (44)
     ;
-    try simulateListing("listing_0045_challenge_register_movs", parseHomeworkResults(expected));
+    try simulateListing("listing_0045_challenge_register_movs", parseHomeworkResults(expected), null);
 }
 
 test "Homework - Listing 46" {
@@ -87,7 +87,7 @@ test "Homework - Listing 46" {
         .Parity = true,
         .Zero = true,
     };
-    try simulateListing("listing_0046_add_sub_cmp", expected_regs);
+    try simulateListing("listing_0046_add_sub_cmp", expected_regs, null);
 }
 
 test "Homework - Listing 47" {
@@ -105,7 +105,7 @@ test "Homework - Listing 47" {
         .AuxCarry = true,
         .Sign = true,
     };
-    try simulateListing("listing_0047_challenge_flags", expected_regs);
+    try simulateListing("listing_0047_challenge_flags", expected_regs, null);
 }
 
 test "Homework - Listing 48" {
@@ -119,7 +119,7 @@ test "Homework - Listing 48" {
         .Carry = true,
         .Sign = true,
     };
-    try simulateListing("listing_0048_ip_register", expected_regs);
+    try simulateListing("listing_0048_ip_register", expected_regs, null);
 }
 
 test "Homework - Listing 49" {
@@ -132,7 +132,7 @@ test "Homework - Listing 49" {
         .Parity = true,
         .Zero = true,
     };
-    try simulateListing("listing_0049_conditional_jumps", expected_regs);
+    try simulateListing("listing_0049_conditional_jumps", expected_regs, null);
 }
 
 test "Homework - Listing 50" {
@@ -147,7 +147,7 @@ test "Homework - Listing 50" {
         .AuxCarry = true,
         .Sign = true,
     };
-    try simulateListing("listing_0050_challenge_jumps", expected_regs);
+    try simulateListing("listing_0050_challenge_jumps", expected_regs, null);
 }
 
 test "Homework - Listing 51" {
@@ -160,7 +160,7 @@ test "Homework - Listing 51" {
     ;
     var expected_regs = parseHomeworkResults(expected);
     expected_regs.flags = .{};
-    try simulateListing("listing_0051_memory_mov", expected_regs);
+    try simulateListing("listing_0051_memory_mov", expected_regs, null);
 }
 
 test "Homework - Listing 52" {
@@ -177,7 +177,7 @@ test "Homework - Listing 52" {
         .Parity = true,
         .Zero = true,
     };
-    try simulateListing("listing_0052_memory_add_loop", expected_regs);
+    try simulateListing("listing_0052_memory_add_loop", expected_regs, null);
 }
 
 test "Homework - Listing 53" {
@@ -192,7 +192,7 @@ test "Homework - Listing 53" {
         .Parity = true,
         .Zero = true,
     };
-    try simulateListing("listing_0053_add_loop_challenge", expected_regs);
+    try simulateListing("listing_0053_add_loop_challenge", expected_regs, null);
 }
 
 test "Homework - Listing 54" {
@@ -207,7 +207,7 @@ test "Homework - Listing 54" {
         .Parity = true,
         .Zero = true,
     };
-    try simulateListing("listing_0054_draw_rectangle", expected_regs);
+    try simulateListing("listing_0054_draw_rectangle", expected_regs, null);
 }
 
 test "Homework - Listing 55" {
@@ -218,7 +218,21 @@ test "Homework - Listing 55" {
     ;
     var expected_regs = parseHomeworkResults(expected);
     expected_regs.flags = .{};
-    try simulateListing("listing_0055_challenge_rectangle", expected_regs);
+    try simulateListing("listing_0055_challenge_rectangle", expected_regs, null);
+}
+
+test "Homework - Listing 56" {
+    const expected =
+        \\bx: 0x03e8 (1000)
+        \\dx: 0x0032 (50)
+        \\bp: 0x07d0 (2000)
+        \\si: 0x0bb8 (3000)
+        \\di: 0x0fa0 (4000)
+        \\ip: 0x0037 (55)
+    ;
+    var expected_regs = parseHomeworkResults(expected);
+    expected_regs.flags = .{};
+    try simulateListing("listing_0056_estimating_cycles", expected_regs, 192);
 }
 
 fn parseHomeworkResults(comptime in: []const u8) x86.Registers {
@@ -275,7 +289,7 @@ fn parseHomeworkResults(comptime in: []const u8) x86.Registers {
     return result;
 }
 
-fn simulateListing(comptime listing_file_name: []const u8, expected_regs: x86.Registers) !void {
+fn simulateListing(comptime listing_file_name: []const u8, expected_regs: x86.Registers, expected_cycle_estimate: ?u16) !void {
     const data_dir = "data";
     const in_bin_path = std.fmt.comptimePrint("{s}/{s}", .{ data_dir, listing_file_name });
     const file_content = @embedFile(in_bin_path);
@@ -286,6 +300,14 @@ fn simulateListing(comptime listing_file_name: []const u8, expected_regs: x86.Re
         try sim.step();
     }
     try expectEqualRegisters(expected_regs, sim.registers);
+
+    if (expected_cycle_estimate) |expected_cycles| {
+        var actual: u16 = 0;
+        for (sim.instructions) |i| {
+            actual += try x86.clocks.estimate(i);
+        }
+        try std.testing.expectEqual(expected_cycles, actual);
+    }
 }
 
 test "Simulator Testbench" {

@@ -4,6 +4,14 @@ const Width = @import("instruction.zig").Width;
 
 pub const RegisterName = enum { AL, CL, DL, BL, AH, CH, DH, BH, AX, CX, DX, BX, SP, BP, SI, DI, ES, CS, SS, DS, IP };
 
+pub fn isAccumulator(reg: RegisterName) bool {
+    return reg == .AX or reg == .AL or reg == .AH;
+}
+
+pub fn isWide(reg: RegisterName) bool {
+    return !isByteRegister(reg);
+}
+
 pub const Registers = struct {
     // [AX_LO, AX_HI, BX_LO, BX_HI, CX_LO, CX_HI, DX_LO, DX_HI, SP_LO, SP_HI, BP_LO, BP_HI, SI_LO, SI_HI, DI_LO, DI_HI, ES, CS, SS, DS, IP]
     data: [26]u8 = [_]u8{0} ** 26,
@@ -204,8 +212,4 @@ fn isByteRegister(reg: RegisterName) bool {
         .AL, .AH, .BL, .BH, .CL, .CH, .DL, .DH => return true,
         else => return false,
     }
-}
-
-fn isWide(reg: RegisterName) bool {
-    return !isByteRegister(reg);
 }

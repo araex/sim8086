@@ -168,12 +168,15 @@ pub fn run(alloc: std.mem.Allocator, simulator: x86.Simulator) !void {
 }
 
 fn drawAsm(state: *State) !void {
+    var hbox = try dvui.box(@src(), .horizontal, .{});
+    defer hbox.deinit();
+
     var tl_asm = try dvui.textLayout(
         @src(),
         .{},
         .{ .expand = .horizontal },
     );
-    defer tl_asm.deinit();
+    errdefer tl_asm.deinit();
     try tl_asm.addText("IP     instruction\n", theme.optionTextDim());
 
     const prefix_normal = "   ";
@@ -198,6 +201,21 @@ fn drawAsm(state: *State) !void {
 
         ip += x86.size.instruction(state.sim.instructions[i]);
     }
+    tl_asm.deinit();
+
+    var tl_clks = try dvui.textLayout(@src(), .{}, .{});
+    defer tl_clks.deinit();
+
+    try tl_clks.addText("CLK\n", theme.optionTextDim());
+    var estimate_total: u16 = 0;
+    for (state.sim.instructions) |instruction| {
+        const estimate = x86.clocks.estimate(instruction) catch blk: {
+            break :blk 0xFF;
+        };
+        try tl_clks.format("{d: >3}\n", .{estimate}, .{});
+        estimate_total += estimate;
+    }
+    try tl_clks.format("{d: >3}", .{estimate_total}, .{});
 }
 
 fn drawRegisters(state: *State) !void {
