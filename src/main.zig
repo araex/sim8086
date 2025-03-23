@@ -29,12 +29,9 @@ pub fn main() !void {
     const file_content = try readFile(alloc, file_path);
     defer alloc.free(file_content);
 
-    const decoded = try x86.toInstructionList(alloc, file_content);
-    defer decoded.deinit();
-    std.log.info("Decoded '{d}' bytes from '{s}'", .{ file_content.len, file_path });
-
-    var simulator = try x86.Simulator.init(decoded.items);
-    try app.run(alloc, &simulator);
+    var simulator = try x86.Simulator.init(alloc, file_content);
+    defer simulator.deinit();
+    try app.run(alloc, simulator);
 }
 
 fn readFile(alloc: std.mem.Allocator, file_path: []u8) ![]u8 {

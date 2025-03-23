@@ -5,6 +5,30 @@ const Theme = dvui.Theme;
 const Options = dvui.Options;
 const Window = dvui.Window;
 
+pub fn optionTextDim() dvui.Options {
+    return dvui.Options{
+        .color_text = dvui.Options.ColorOrName{
+            .color = dvui.Color.average(
+                dvui.themeGet().color_text,
+                dvui.themeGet().color_fill_control,
+            ),
+        },
+    };
+}
+
+pub fn optionTextBold() dvui.Options {
+    return dvui.Options{ .font_style = .heading };
+}
+
+pub fn optionTextHighlight() dvui.Options {
+    return dvui.Options{
+        .font_style = .heading,
+        .color_text = .{
+            .color = dvui.themeGet().color_accent,
+        },
+    };
+}
+
 const FiraCode = struct {
     const name = "FiraCode";
     const data = @embedFile("assets/font/FiraCode-Regular.ttf");

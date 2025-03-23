@@ -19,6 +19,31 @@ const Width = @import("instruction.zig").Width;
 
 const native_endian = @import("builtin").target.cpu.arch.endian();
 
+pub fn instructionList(alloc: std.mem.Allocator, bin: []const u8) !std.ArrayList(Instruction) {
+    const fmt = @import("format.zig").fmt;
+
+    var result = std.ArrayList(Instruction).init(alloc);
+    errdefer result.deinit();
+    var stream = std.io.fixedBufferStream(bin);
+    var reader = stream.reader().any();
+    while (true) {
+        const decoded = instruction(&reader) catch |err| switch (err) {
+            error.EndOfStream => break,
+            error.UnknownInstruction => {
+                std.log.err("Got unknown instruction. Parsed {d} sucessfully:\n", .{result.items.len});
+                for (result.items) |item| {
+                    std.log.err("{}", .{fmt(item)});
+                }
+                return error.UnknownInstruction;
+            },
+            else => return err,
+        };
+        try result.append(decoded);
+    }
+
+    return result;
+}
+
 pub fn instruction(reader: *std.io.AnyReader) !Instruction {
     const byte_1 = try reader.readByte();
     const byte_2 = try reader.readByte();

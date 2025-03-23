@@ -2,9 +2,10 @@ const std = @import("std");
 
 const dvui = @import("dvui");
 
+const theme = @import("theme.zig");
 const x86 = @import("x86.zig");
 
-pub fn hexViewer(_: std.builtin.SourceLocation, mem: x86.Memory, _: dvui.Options) !void {
+pub fn hexViewer(_: std.builtin.SourceLocation, sim: x86.Simulator) !void {
     const Data = struct {
         var start_addr: usize = 0;
     };
@@ -18,7 +19,7 @@ pub fn hexViewer(_: std.builtin.SourceLocation, mem: x86.Memory, _: dvui.Options
         const result = try dvui.textEntryNumber(
             @src(),
             usize,
-            .{ .min = 0, .max = mem.data.len },
+            .{ .min = 0, .max = sim.memory.data.len },
             .{ .min_size_content = dvui.Options.sizeM(8, 1) },
         );
         const label = switch (result.value) {
@@ -33,6 +34,9 @@ pub fn hexViewer(_: std.builtin.SourceLocation, mem: x86.Memory, _: dvui.Options
         }
     }
     {
+        const ip = sim.registers.getWord(.IP);
+        const cur_instr_len = if (sim.isValidInstructionPointer()) x86.size.instruction(sim.getCurrentInstruction()) else 0;
+
         // Display a fixed number of rows (10) starting at start_addr
         const bytesPerRow: usize = 16;
         const numRowsToShow: usize = 10;
@@ -41,12 +45,15 @@ pub fn hexViewer(_: std.builtin.SourceLocation, mem: x86.Memory, _: dvui.Options
         defer tl.deinit();
         for (0..numRowsToShow) |i| {
             const addr: usize = row_start + i * bytesPerRow;
-            try tl.format("0x{X:0<4} ", .{addr}, .{});
+            try tl.format("0x{X:0<4} ", .{addr}, theme.optionTextDim());
 
-            if (addr < mem.data.len) {
-                const row_data = mem.data[addr..@min(addr + bytesPerRow, mem.data.len)];
-                for (row_data) |byte| {
-                    try tl.format("{X:0<2} ", .{byte}, .{});
+            if (addr < sim.memory.data.len) {
+                const row_data = sim.memory.data[addr..@min(addr + bytesPerRow, sim.memory.data.len)];
+                for (row_data, 0..) |byte, offset| {
+                    const cur_addr = addr + offset;
+                    const is_cur_instr = cur_addr >= ip and cur_addr < ip + cur_instr_len;
+                    const opts = if (is_cur_instr) theme.optionTextHighlight() else if (cur_addr < sim.program_length) theme.optionTextDim() else dvui.Options{};
+                    try tl.format("{X:0<2} ", .{byte}, opts);
                 }
             } else {
                 try tl.addText("   ", .{});

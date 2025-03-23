@@ -1,4 +1,3 @@
-const assert = @import("std").debug.assert;
 const std = @import("std");
 
 const DstOperand = @import("instruction.zig").DstOperand;
@@ -27,18 +26,31 @@ pub const Simulator = struct {
     registers: Registers,
     memory: Memory,
 
-    pub fn init(instructions: []const Instruction) !Simulator {
-        var byte_count: u16 = 0;
-        for (instructions) |i| {
-            byte_count += size.instruction(i);
+    alloc: std.mem.Allocator,
+
+    pub fn init(alloc: std.mem.Allocator, binary: []const u8) !Simulator {
+        const decode = @import("decode.zig");
+
+        var mem = Memory{};
+        std.debug.assert(binary.len <= mem.data.len);
+        for (0..binary.len) |i| {
+            mem.data[i] = binary[i];
         }
+
+        var instruction_list = try decode.instructionList(alloc, mem.data[0..binary.len]);
+
         return Simulator{
-            .instructions = instructions,
+            .instructions = try instruction_list.toOwnedSlice(),
             .cur_instruction_idx = 0,
+            .program_length = @intCast(binary.len),
             .registers = .{},
-            .program_length = byte_count,
-            .memory = .{},
+            .memory = mem,
+            .alloc = alloc,
         };
+    }
+
+    pub fn deinit(self: *Simulator) void {
+        self.alloc.free(self.instructions);
     }
 
     pub fn step(self: *Simulator) !void {
@@ -71,11 +83,11 @@ pub const Simulator = struct {
     }
 
     pub fn getCurrentInstruction(self: *const Simulator) Instruction {
-        assert(isValidInstructionPointer(self));
+        std.debug.assert(isValidInstructionPointer(self));
         return self.instructions[self.cur_instruction_idx];
     }
 
-    fn isValidInstructionPointer(self: *const Simulator) bool {
+    pub fn isValidInstructionPointer(self: *const Simulator) bool {
         return self.cur_instruction_idx < self.instructions.len;
     }
     fn execJump(self: *Simulator, jump: Jump) !void {

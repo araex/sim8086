@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 const dvui = @import("dvui");
 
 const hexViewer = @import("hex_viewer.zig").hexViewer;
+const theme = @import("theme.zig");
 const x86 = @import("x86.zig");
 
 comptime {
@@ -13,7 +14,7 @@ comptime {
 const num_registers = 13;
 const State = struct {
     // The simulator
-    sim: *x86.Simulator,
+    sim: x86.Simulator,
 
     // Disassembly of the instructions in the simulator
     instr_asm: []const []const u8,
@@ -24,7 +25,7 @@ const State = struct {
     ui_scale: f32,
     allocator: std.mem.Allocator,
 
-    pub fn init(alloc: std.mem.Allocator, simulator: *x86.Simulator) !State {
+    pub fn init(alloc: std.mem.Allocator, simulator: x86.Simulator) !State {
         // Allocate a slice to hold all instruction strings
         var instr_asm = try alloc.alloc([]u8, simulator.instructions.len);
 
@@ -98,19 +99,7 @@ const State = struct {
     }
 };
 
-fn optionTextDim() dvui.Options {
-    const opt_text_dim = dvui.Options{ .color_text = dvui.Options.ColorOrName{
-        .color = dvui.Color.average(dvui.themeGet().color_text, dvui.themeGet().color_fill_control),
-    } };
-    return opt_text_dim;
-}
-
-fn optionTextBold() dvui.Options {
-    const opt_text_bold = dvui.Options{ .font_style = .heading };
-    return opt_text_bold;
-}
-
-pub fn run(alloc: std.mem.Allocator, simulator: *x86.Simulator) !void {
+pub fn run(alloc: std.mem.Allocator, simulator: x86.Simulator) !void {
     if (@import("builtin").os.tag == .windows) {
         // on windows graphical apps have no console, so output goes to nowhere
         // attach it manually. related: https://github.com/ziglang/zig/issues/4196
@@ -132,7 +121,7 @@ pub fn run(alloc: std.mem.Allocator, simulator: *x86.Simulator) !void {
     defer win.deinit();
 
     // load theme
-    try @import("theme.zig").install(&win);
+    try theme.install(&win);
 
     var state = try State.init(alloc, simulator);
     defer state.deinit(); // Add this line to free memory when done
@@ -179,7 +168,7 @@ fn draw_asm(state: *State) !void {
         .{ .expand = .horizontal },
     );
     defer tl_asm.deinit();
-    try tl_asm.addText("IP     instruction\n", optionTextDim());
+    try tl_asm.addText("IP     instruction\n", theme.optionTextDim());
 
     const prefix_normal = "   ";
     const prefix_current = " > ";
@@ -188,13 +177,10 @@ fn draw_asm(state: *State) !void {
     for (state.instr_asm, 0..) |line, i| {
         const is_current_instruction = i == state.sim.cur_instruction_idx;
         const formatted = try std.fmt.bufPrint(&ip_string_buf, "{X:0>4}", .{ip});
-        try tl_asm.addText(formatted, if (is_current_instruction) optionTextBold() else optionTextDim());
+        try tl_asm.addText(formatted, if (is_current_instruction) theme.optionTextBold() else theme.optionTextDim());
         if (is_current_instruction) {
             try tl_asm.addText(prefix_current, .{});
-            try tl_asm.addText(line, .{
-                .font_style = .heading,
-                .color_text = .{ .color = dvui.themeGet().color_accent },
-            });
+            try tl_asm.addText(line, theme.optionTextHighlight());
         } else {
             try tl_asm.addText(prefix_normal, .{});
             try tl_asm.addText(line, .{});
@@ -228,8 +214,8 @@ fn draw_registers(state: *State) !void {
             defer tl.deinit();
 
             for (0..4) |i| {
-                try tl.addText(reg_names[i], optionTextDim());
-                try tl.addText(state.register_strings[i], optionTextBold());
+                try tl.addText(reg_names[i], theme.optionTextDim());
+                try tl.addText(state.register_strings[i], theme.optionTextBold());
                 if (i < 3) {
                     try tl.addText("\n", .{});
                 }
@@ -242,8 +228,8 @@ fn draw_registers(state: *State) !void {
             defer tl.deinit();
 
             for (4..8) |i| {
-                try tl.addText(reg_names[i], optionTextDim());
-                try tl.addText(state.register_strings[i], optionTextBold());
+                try tl.addText(reg_names[i], theme.optionTextDim());
+                try tl.addText(state.register_strings[i], theme.optionTextBold());
                 if (i < 7) {
                     try tl.addText("\n", .{});
                 }
@@ -256,8 +242,8 @@ fn draw_registers(state: *State) !void {
             defer tl.deinit();
 
             for (8..12) |i| {
-                try tl.addText(reg_names[i], optionTextDim());
-                try tl.addText(state.register_strings[i], optionTextBold());
+                try tl.addText(reg_names[i], theme.optionTextDim());
+                try tl.addText(state.register_strings[i], theme.optionTextBold());
                 if (i < 11) {
                     try tl.addText("\n", .{});
                 }
@@ -268,7 +254,7 @@ fn draw_registers(state: *State) !void {
     {
         var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal });
         defer tl.deinit();
-        try tl.addText("C P A Z S O\n", optionTextDim());
+        try tl.addText("C P A Z S O\n", theme.optionTextDim());
 
         const flag_values = [_]bool{
             state.sim.registers.flags.Carry,
@@ -280,7 +266,7 @@ fn draw_registers(state: *State) !void {
         };
 
         for (flag_values) |flag| {
-            try tl.addText(if (flag) "1 " else "0 ", if (flag) optionTextBold() else optionTextDim());
+            try tl.addText(if (flag) "1 " else "0 ", if (flag) theme.optionTextBold() else theme.optionTextDim());
         }
     }
 
@@ -288,8 +274,8 @@ fn draw_registers(state: *State) !void {
         var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .horizontal });
         defer tl.deinit();
 
-        try tl.addText(reg_names[ip_idx], optionTextDim());
-        try tl.addText(state.register_strings[ip_idx], optionTextBold());
+        try tl.addText(reg_names[ip_idx], theme.optionTextDim());
+        try tl.addText(state.register_strings[ip_idx], theme.optionTextBold());
     }
 }
 
@@ -373,7 +359,7 @@ fn draw_ui(state: *State) !void {
         defer hbox.deinit();
 
         try draw_asm(state);
-        try hexViewer(@src(), state.sim.memory, .{});
+        try hexViewer(@src(), state.sim);
     }
 
     const label = if (dvui.Examples.show_demo_window) "Hide Demo Window" else "Show Demo Window";

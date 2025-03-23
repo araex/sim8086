@@ -238,10 +238,9 @@ fn simulateListing(comptime listing_file_name: []const u8, expected_regs: x86.Re
     const data_dir = "data";
     const in_bin_path = std.fmt.comptimePrint("{s}/{s}", .{ data_dir, listing_file_name });
     const file_content = @embedFile(in_bin_path);
-    const instructions = try x86.toInstructionList(std.testing.allocator, file_content);
-    defer instructions.deinit();
 
-    var sim = try x86.Simulator.init(instructions.items);
+    var sim = try x86.Simulator.init(std.testing.allocator, file_content);
+    defer sim.deinit();
     while (!sim.isDone()) {
         try sim.step();
     }
@@ -260,11 +259,9 @@ test "Simulator Testbench" {
     const bin = try runNasm(alloc, asm_instructions, file_name);
     defer alloc.free(bin);
 
-    const instructions = try x86.toInstructionList(alloc, bin);
-    defer instructions.deinit();
-
     var expected_registers = x86.Registers{};
-    var sim = try x86.Simulator.init(instructions.items);
+    var sim = try x86.Simulator.init(alloc, bin);
+    defer sim.deinit();
     try std.testing.expectEqual(0, sim.cur_instruction_idx);
     try expectEqualRegisters(expected_registers, sim.registers);
 
@@ -299,7 +296,7 @@ fn testEncodeDecodeWithAsmDiff(comptime asm_instruction: [:0]const u8) !void {
     defer alloc.free(got_bin);
 
     // 2. Decode assembled bin
-    const instructions = try x86.toInstructionList(alloc, got_bin);
+    const instructions = try x86.decode.instructionList(alloc, got_bin);
     defer instructions.deinit();
     const got_asm = try x86.toAsm(alloc, instructions.items);
     defer got_asm.deinit();
@@ -338,7 +335,7 @@ fn testDecodeEncodeListing(comptime listing_file_name: []const u8) !void {
     defer alloc.free(want_asm);
     const want_bin = @embedFile(in_bin_path);
 
-    const instructions = try x86.toInstructionList(alloc, want_bin[0..]);
+    const instructions = try x86.decode.instructionList(alloc, want_bin[0..]);
     defer instructions.deinit();
 
     const got_asm = try x86.toAsm(alloc, instructions.items);
