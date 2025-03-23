@@ -2,9 +2,9 @@ const std = @import("std");
 
 const dvui = @import("dvui");
 
-const SimMemory = @import("x86.zig").SimMemory;
+const x86 = @import("x86.zig");
 
-pub fn hexViewer(_: std.builtin.SourceLocation, mem: SimMemory, _: dvui.Options) !void {
+pub fn hexViewer(_: std.builtin.SourceLocation, mem: x86.Memory, _: dvui.Options) !void {
     const Data = struct {
         var start_addr: usize = 0;
     };

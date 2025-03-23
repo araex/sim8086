@@ -1,335 +1,195 @@
 const std = @import("std");
 
-const decodeDirection = @import("fields.zig").decodeDirection;
-const decodeImmediate = @import("operands.zig").decodeImmediate;
-const decodeImmediateWithSignExtension = @import("operands.zig").decodeImmediateWithSignExtension;
-const decodeJumpDestination = @import("operands.zig").decodeJumpDestination;
-const decodeMode = @import("fields.zig").decodeMode;
-const decodeOpcode = @import("opcodes.zig").decodeOpcode;
-const decodeOperatesOn = @import("fields.zig").decodeOperatesOn;
-const decodeRegister = @import("operands.zig").decodeRegister;
-const decodeRM = @import("operands.zig").decodeRM;
-const decodeSegmentRegister = @import("operands.zig").decodeSegmentRegister;
-const Direction = @import("fields.zig").Direction;
-const Displacement = @import("fields.zig").Displacement;
-const DstType = @import("operands.zig").DstType;
-const EffectiveAddressCalculation = @import("fields.zig").EffectiveAddressCalculation;
-const getOpcodeSize = @import("opcodes.zig").getOpcodeSize;
-const ImmediateField = @import("operands.zig").ImmediateField;
-const ImmediateValue = @import("operands.zig").ImmediateValue;
-const makeDst = @import("operands.zig").makeDst;
-const makeSrc = @import("operands.zig").makeSrc;
-const Memory = @import("operands.zig").Memory;
-const Mode = @import("fields.zig").Mode;
-const Opcode = @import("opcodes.zig").Opcode;
-const OpcodeSize = @import("opcodes.zig").OpcodeSize;
-const OperatesOn = @import("fields.zig").OperatesOn;
-const Register = @import("operands.zig").Register;
-const SrcType = @import("operands.zig").SrcType;
+const EffectiveAddressCalculation = @import("memory.zig").EffectiveAddressCalculation;
+const MemoryOperand = @import("memory.zig").MemoryOperand;
+const RegisterName = @import("register.zig").RegisterName;
 
 pub const Instruction = struct {
-    op: Opcode,
-    wide: OperatesOn,
-    src: ?SrcType,
-    dst: DstType,
+    op: Operation,
+    wide: Width,
+    src: ?SrcOperand,
+    dst: DstOperand,
+};
 
-    // Computes the total size of an instruction in bytes
-    pub fn size(self: *const Instruction) u4 {
-        const opsize = getOpcodeSize(self.op);
-        var total_size = opsize;
+pub const Operation = enum { Unknown, mov_rm_to_from_r, mov_imm_to_rm, mov_imm_to_r, mov_mem_to_accumulator, mov_accumulator_to_mem, mov_rm_to_sr, mov_sr_to_rm, add_rm_with_r_to_either, add_imm_to_rm, add_imm_to_acc, sub_rm_and_r_to_either, sub_imm_to_rm, sub_imm_to_acc, cmp_rm_with_r, cmp_imm_with_rm, cmp_imm_with_acc, jo, jno, jb_jnae, jnb_jae, je_jz, jne_jnz, jbe_jna, jnbe_ja, js, jns, jp_jpe, jnp_jpo, jl_jnge, jnl_jge, jle_jng, jnle_jg, loopnz_loopne, loopz_loope, loop, jcxz };
 
-        switch (self.dst) {
-            .register => {},
-            .memory => |mem| {
-                switch (mem.calc) {
-                    .DIRECT_ADDRESS => total_size += if (self.wide == .Byte) 1 else 2,
-                    else => {
-                        if (mem.displacement) |disp| {
-                            switch (disp) {
-                                .byte => total_size += 1,
-                                .word => total_size += 2,
-                            }
-                        }
-                    },
-                }
+pub const Width = enum {
+    Byte,
+    Word,
+};
+
+pub const SrcOperand = union(enum) {
+    register: RegisterName,
+    immediate: ImmediateOperand,
+    memory: MemoryOperand,
+
+    pub fn as(self: SrcOperand, t: type) !t {
+        switch (t) {
+            u8, u16 => {
+                const imm = try self.asImmediateOperand();
+                return imm.as(t);
             },
-            .jump => total_size += 1, // 8-bit signed displacement
+            ImmediateOperand => return self.asImmediateOperand(),
+            RegisterName => return self.asRegister(),
+            MemoryOperand => return self.asMemory(),
+            else => return error.InvalidAcces,
         }
+    }
 
-        if (self.src) |src| {
-            switch (src) {
-                .register => {},
-                .memory => |mem| {
-                    switch (mem.calc) {
-                        .DIRECT_ADDRESS => total_size += if (self.wide == .Byte) 1 else 2,
-                        else => {
-                            if (mem.displacement) |disp| {
-                                switch (disp) {
-                                    .byte => total_size += 1,
-                                    .word => total_size += 2,
-                                }
-                            }
-                        },
-                    }
-                },
-                .immediate => |imm| {
-                    switch (imm.value) {
-                        .byte => total_size += 1,
-                        .word => {
-                            // Check if this could have been a sign-extended immediate
-                            // For certain instructions with word operands, immediates in the range -128 to 127
-                            // would have been encoded as a single byte with sign extension
-                            const could_be_sign_extended = switch (self.op) {
-                                .add_imm_to_rm, .sub_imm_to_rm, .cmp_imm_with_rm => true,
-                                else => false,
-                            };
-
-                            if (could_be_sign_extended and self.wide == .Word) {
-                                const value = imm.value.word;
-                                // Check if value fits in signed byte range (-128 to 127)
-                                if (value <= 127 or value >= 0xFF80) { // 0xFF80 is -128 as u16
-                                    total_size += 1; // Sign-extended immediate takes 1 byte
-                                } else {
-                                    total_size += 2; // Regular word immediate
-                                }
-                            } else {
-                                total_size += 2; // Regular word immediate
-                            }
-                        },
-                    }
-                },
-            }
+    fn asImmediateOperand(self: SrcOperand) !ImmediateOperand {
+        switch (self) {
+            .immediate => |imm| return imm,
+            else => return error.InvalidAcces,
         }
+    }
 
-        return total_size;
+    fn asRegister(self: SrcOperand) !RegisterName {
+        switch (self) {
+            .register => |r| return r,
+            else => return error.InvalidAcces,
+        }
+    }
+
+    fn asMemory(self: SrcOperand) !MemoryOperand {
+        switch (self) {
+            .memory => |m| return m,
+            else => return error.InvalidAcces,
+        }
     }
 };
 
-pub fn makeInstruction(op: Opcode, operates_on: OperatesOn, dst: anytype, src: anytype) Instruction {
+pub const DstOperand = union(enum) {
+    register: RegisterName,
+    memory: MemoryOperand,
+    jump: JumpDestination,
+};
+
+pub const JumpDestination = struct {
+    increment: i8,
+};
+
+pub const AddressingMode = enum(u3) {
+    Mem,
+    Mem8BitDisplacement,
+    Mem16BitDisplacement,
+    Reg,
+};
+
+pub const Direction = enum {
+    ToRegister, // Instruction destination is specified in REG field
+    FromRegister, // Instruction source is specified in REG field
+};
+
+pub const RegOrMem = union(enum) {
+    register: RegisterName,
+    memory: MemoryOperand,
+};
+
+pub const ImmediateOperand = struct {
+    value: union(enum) {
+        byte: u8,
+        word: u16,
+    },
+
+    pub fn as(self: ImmediateOperand, t: type) !t {
+        switch (t) {
+            u8 => {
+                switch (self.value) {
+                    .byte => |b| return b,
+                    .word => |w| return @intCast(w),
+                }
+            },
+            u16 => {
+                switch (self.value) {
+                    .byte => |b| return @as(u16, b),
+                    .word => |w| return w,
+                }
+            },
+            else => return error.UnsupportedType,
+        }
+    }
+};
+
+pub fn makeInstruction(op: Operation, width: Width, dst: anytype, src: anytype) Instruction {
     return Instruction{
         .op = op,
-        .wide = operates_on,
+        .wide = width,
         .dst = makeDst(dst),
         .src = makeSrc(src),
     };
 }
 
-pub fn decodeInstruction(reader: *std.io.AnyReader) !Instruction {
-    const byte_1 = try reader.readByte();
-    const byte_2 = try reader.readByte();
-    const op = decodeOpcode(byte_1, byte_2);
-
-    return switch (op) {
-        .add_rm_with_r_to_either,
-        .sub_rm_and_r_to_either,
-        .cmp_rm_with_r,
-        .mov_rm_to_from_r,
-        => try decodeRegMemToFromReg(op, byte_1, byte_2, reader),
-        .mov_sr_to_rm,
-        .mov_rm_to_sr,
-        => try decodeMovSegmentRegister(op, byte_1, byte_2, reader),
-        .mov_imm_to_r,
-        => try decodeImmediateToRegister(op, byte_1, byte_2, reader),
-        .mov_imm_to_rm,
-        => try decodeImmediateToRegMem(op, byte_1, byte_2, reader),
-        .mov_mem_to_accumulator,
-        .mov_accumulator_to_mem,
-        => try decodeMemToFromAccumulator(op, byte_1, byte_2, reader),
-        .add_imm_to_rm,
-        .sub_imm_to_rm,
-        .cmp_imm_with_rm,
-        => try decodeImmediateToRegMemWithExtensionInstruction(op, byte_1, byte_2, reader),
-        .add_imm_to_acc,
-        .sub_imm_to_acc,
-        .cmp_imm_with_acc,
-        => try decodeImmediateToAccumulatorInstruction(op, byte_1, byte_2, reader),
-        .jo,
-        .jno,
-        .jb_jnae,
-        .jnb_jae,
-        .je_jz,
-        .jne_jnz,
-        .jbe_jna,
-        .jnbe_ja,
-        .js,
-        .jns,
-        .jp_jpe,
-        .jnp_jpo,
-        .jl_jnge,
-        .jnl_jge,
-        .jle_jng,
-        .jnle_jg,
-        .loopnz_loopne,
-        .loopz_loope,
-        .loop,
-        .jcxz,
-        => decodeJumpInstruction(op, byte_2),
+pub fn makeSrc(val: anytype) ?SrcOperand {
+    switch (@TypeOf(val)) {
+        SrcOperand => return val,
+        ?SrcOperand => return val,
+        RegisterName => {
+            return SrcOperand{
+                .register = val,
+            };
+        },
+        MemoryOperand => {
+            return SrcOperand{
+                .memory = val,
+            };
+        },
+        RegOrMem => {
+            switch (val) {
+                .register => |r| return makeSrc(r),
+                .memory => |m| return makeSrc(m),
+            }
+        },
+        ImmediateOperand => {
+            return SrcOperand{
+                .immediate = val,
+            };
+        },
+        u8, u16 => return makeSrc(makeImmediate(val)),
+        @TypeOf(null) => return null,
         else => {
-            std.log.err("Unknown opcode: {x} {x}\n", .{ byte_1, byte_2 });
-            return error.UnknownInstruction;
+            std.log.err("unhandled type '{}' with value '{any}'", .{ @TypeOf(val), val });
+            unreachable;
         },
-    };
-}
-
-fn decodeRegMemToFromReg(op: Opcode, byte_1: u8, byte_2: u8, reader: *std.io.AnyReader) !Instruction {
-    // Format: | OP D W | MOD REG R/M | [DISP] | D=direction, W=width
-    const operates_on = decodeOperatesOn(0b00000001, byte_1);
-    const dir = decodeDirection(0b00000010, byte_1);
-    const mode = decodeMode(0b11000000, byte_2);
-    const reg = decodeRegister(operates_on, 0b00111000, byte_2);
-    const rm = try decodeRM(mode, operates_on, 0b00000111, byte_2, reader);
-
-    return switch (dir) {
-        Direction.FromRegister => makeInstruction(op, operates_on, rm, reg),
-        Direction.ToRegister => makeInstruction(op, operates_on, reg, rm),
-    };
-}
-
-fn decodeMovSegmentRegister(op: Opcode, byte_1: u8, byte_2: u8, reader: *std.io.AnyReader) !Instruction {
-    _ = byte_1;
-    // Format: | OP | MOD 0b0 SR R/M | [DISP] | SR=Segment Register
-    const mode = decodeMode(0b11000000, byte_2);
-    const sr = decodeSegmentRegister(0b00011000, byte_2);
-    const rm = try decodeRM(mode, .Word, 0b00000111, byte_2, reader);
-    return switch (op) {
-        .mov_sr_to_rm => return makeInstruction(op, .Word, rm, sr),
-        .mov_rm_to_sr => return makeInstruction(op, .Word, sr, rm),
-        else => unreachable,
-    };
-}
-
-fn decodeImmediateToRegister(op: Opcode, byte_1: u8, byte_2: u8, reader: *std.io.AnyReader) !Instruction {
-    // Format: | OP + reg | IMM | W encoded in opcode
-    const operates_on = decodeOperatesOn(0b00001000, byte_1);
-    const reg = decodeRegister(operates_on, 0b00000111, byte_1);
-    const immediate = try decodeImmediate(operates_on, byte_2, reader);
-
-    return makeInstruction(op, operates_on, reg, immediate);
-}
-
-fn decodeImmediateToRegMem(op: Opcode, byte_1: u8, byte_2: u8, reader: *std.io.AnyReader) !Instruction {
-    // Format: | OP W | MOD 000 R/M | [DISP] | IMM | W=width
-    const operates_on = decodeOperatesOn(0b00000001, byte_1);
-    const mode = decodeMode(0b11000000, byte_2);
-    std.debug.assert(mode != Mode.Reg);
-    const rm = try decodeRM(mode, operates_on, 0b00000111, byte_2, reader);
-
-    const immediate = try decodeImmediate(operates_on, try reader.readByte(), reader);
-    return makeInstruction(op, operates_on, rm, immediate);
-}
-
-fn decodeMemToFromAccumulator(op: Opcode, byte_1: u8, byte_2: u8, reader: *std.io.AnyReader) !Instruction {
-    // Format: | OP W | ADDR-LO | [ADDR-HI] | W=width
-    const operates_on = decodeOperatesOn(0b00000001, byte_1);
-    const reg = if (operates_on == OperatesOn.Byte) Register.AL else Register.AX;
-
-    // Read address (displacement)
-    const displacement = if (operates_on == OperatesOn.Byte)
-        Displacement{ .byte = byte_2 }
-    else
-        Displacement{ .word = @as(u16, byte_2) | (@as(u16, try reader.readByte()) << 8) };
-
-    const mem = Memory{
-        .calc = EffectiveAddressCalculation.DIRECT_ADDRESS,
-        .displacement = displacement,
-    };
-
-    // Direction is encoded in the opcode itself
-    return switch (op) {
-        .mov_accumulator_to_mem => makeInstruction(op, operates_on, makeDst(mem), reg),
-        .mov_mem_to_accumulator => makeInstruction(op, operates_on, reg, makeSrc(mem)),
-        else => unreachable,
-    };
-}
-
-fn decodeImmediateToRegMemWithExtensionInstruction(op: Opcode, byte_1: u8, byte_2: u8, reader: *std.io.AnyReader) !Instruction {
-    // Format: | OP S W | MOD 000 R/M | [DISP] | IMM | S=sign ext, W=width
-    const operates_on = decodeOperatesOn(0b00000001, byte_1);
-    const sign_extension = (byte_1 & 0b00000010) != 0;
-    const mode = decodeMode(0b11000000, byte_2);
-    const rm = try decodeRM(mode, operates_on, 0b00000111, byte_2, reader);
-
-    // Handle sign extension cases
-    const immediate = if (sign_extension)
-        try decodeImmediateWithSignExtension(try reader.readByte())
-    else
-        try decodeImmediate(operates_on, try reader.readByte(), reader);
-
-    return makeInstruction(op, operates_on, rm, immediate);
-}
-
-fn decodeImmediateToAccumulatorInstruction(op: Opcode, byte_1: u8, byte_2: u8, reader: *std.io.AnyReader) !Instruction {
-    // Format: | OP W | IMM | W=width
-    const operates_on = decodeOperatesOn(0b00000001, byte_1);
-    const reg = if (operates_on == OperatesOn.Byte) Register.AL else Register.AX;
-    const immediate = try decodeImmediate(operates_on, byte_2, reader);
-
-    return makeInstruction(op, operates_on, reg, immediate);
-}
-
-fn decodeJumpInstruction(op: Opcode, byte_2: u8) Instruction {
-    // Format: | OP | DISP | 8-bit signed displacement
-    // No need for pattern here as it's very simple
-    const jump = decodeJumpDestination(byte_2);
-    return makeInstruction(op, .Byte, jump, null);
-}
-
-// TESTS
-test "instruction size with sign-extended immediates" {
-    const testing = std.testing;
-    const TestCase = struct {
-        inst: Instruction,
-        expected_size: u4,
-    };
-
-    const tests = [_]TestCase{
-        .{
-            .inst = makeInstruction(
-                Opcode.add_imm_to_rm,
-                OperatesOn.Word,
-                Register.AX,
-                ImmediateField{
-                    .value = ImmediateValue{ .word = 5 },
-                },
-            ),
-            .expected_size = 3,
-        },
-        .{
-            .inst = makeInstruction(
-                Opcode.add_imm_to_rm,
-                OperatesOn.Word,
-                Register.AX,
-                ImmediateField{
-                    .value = ImmediateValue{ .word = 300 },
-                },
-            ),
-            .expected_size = 4,
-        },
-        .{
-            .inst = makeInstruction(
-                Opcode.add_imm_to_rm,
-                OperatesOn.Word,
-                Register.AX,
-                ImmediateField{
-                    .value = ImmediateValue{ .word = 0xFFF0 },
-                },
-            ),
-            .expected_size = 3,
-        },
-        .{
-            .inst = makeInstruction(
-                Opcode.mov_imm_to_r,
-                OperatesOn.Word,
-                Register.AX,
-                ImmediateField{
-                    .value = ImmediateValue{ .word = 5 },
-                },
-            ),
-            .expected_size = 3,
-        },
-    };
-
-    for (tests) |tc| {
-        try testing.expectEqual(tc.expected_size, tc.inst.size());
     }
+}
+
+pub fn makeDst(val: anytype) DstOperand {
+    switch (@TypeOf(val)) {
+        DstOperand => return val,
+        RegisterName => {
+            return DstOperand{
+                .register = val,
+            };
+        },
+        MemoryOperand => {
+            return DstOperand{
+                .memory = val,
+            };
+        },
+        RegOrMem => {
+            switch (val) {
+                .register => |r| return makeDst(r),
+                .memory => |m| return makeDst(m),
+            }
+        },
+        JumpDestination => {
+            return DstOperand{
+                .jump = val,
+            };
+        },
+        else => {
+            std.log.err("unhandled type '{}' with value '{any}'", .{ @TypeOf(val), val });
+        },
+    }
+}
+
+pub fn makeImmediate(val: anytype) ImmediateOperand {
+    return ImmediateOperand{
+        .value = switch (@TypeOf(val)) {
+            u8 => .{ .byte = val },
+            u16 => .{ .word = val },
+            ImmediateOperand => return val,
+            else => unreachable,
+        },
+    };
 }

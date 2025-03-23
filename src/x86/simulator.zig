@@ -1,16 +1,19 @@
 const assert = @import("std").debug.assert;
 const std = @import("std");
 
-const DstType = @import("operands.zig").DstType;
-const EffectiveAddressCalculation = @import("fields.zig").EffectiveAddressCalculation;
+const DstOperand = @import("instruction.zig").DstOperand;
+const EffectiveAddressCalculation = @import("memory.zig").EffectiveAddressCalculation;
 const Instruction = @import("instruction.zig").Instruction;
-const MemoryOperand = @import("operands.zig").Memory;
-const Opcode = @import("opcodes.zig").Opcode;
-const OperatesOn = @import("fields.zig").OperatesOn;
-const RegisterType = @import("operands.zig").Register;
-const SrcType = @import("operands.zig").SrcType;
+const Memory = @import("memory.zig").Memory;
+const MemoryOperand = @import("memory.zig").MemoryOperand;
+const Operation = @import("instruction.zig").Operation;
+const RegisterName = @import("register.zig").RegisterName;
+const Registers = @import("register.zig").Registers;
+const size = @import("size.zig");
+const SrcOperand = @import("instruction.zig").SrcOperand;
+const Width = @import("instruction.zig").Width;
 
-const InstructionError = error{
+const SimError = error{
     InvalidOperands,
     MissingSrcOperand,
     NotImplemented,
@@ -27,7 +30,7 @@ pub const Simulator = struct {
     pub fn init(instructions: []const Instruction) !Simulator {
         var byte_count: u16 = 0;
         for (instructions) |i| {
-            byte_count += i.size();
+            byte_count += size.instruction(i);
         }
         return Simulator{
             .instructions = instructions,
@@ -40,13 +43,13 @@ pub const Simulator = struct {
 
     pub fn step(self: *Simulator) !void {
         const i = self.getCurrentInstruction();
-        self.registers.setWord(.IP, self.registers.getWord(.IP) + i.size());
+        self.registers.setWord(.IP, self.registers.getWord(.IP) + size.instruction(i));
         self.cur_instruction_idx += 1;
         if (toJump(i, self.registers)) |jump| {
             return self.execJump(jump);
         }
         if (toBinaryOp(i.op)) |bin_op| {
-            const src = i.src orelse return InstructionError.MissingSrcOperand;
+            const src = i.src orelse return SimError.MissingSrcOperand;
             switch (i.wide) {
                 .Byte => try self.exec(bin_op, u8, i.dst, src),
                 .Word => try self.exec(bin_op, u16, i.dst, src),
@@ -55,7 +58,7 @@ pub const Simulator = struct {
         }
 
         std.log.err("Instruction '{s}'' not implemented ", .{@tagName(i.op)});
-        return InstructionError.NotImplemented;
+        return SimError.NotImplemented;
     }
 
     pub fn reset(self: *Simulator) void {
@@ -99,12 +102,12 @@ pub const Simulator = struct {
                 self.cur_instruction_idx = i;
                 return;
             }
-            offset += instr.size();
+            offset += size.instruction(instr);
         }
         return error.JumpedOutsideValidRange;
     }
 
-    fn exec(self: *Simulator, op: BinaryOperation, T: type, dst: DstType, src: SrcType) !void {
+    fn exec(self: *Simulator, op: BinaryOperation, T: type, dst: DstOperand, src: SrcOperand) !void {
         const operand_1 = try self.getDstValue(T, dst);
         const operand_2 = try self.getSrcValue(T, src);
         const result = switch (op) {
@@ -149,7 +152,7 @@ pub const Simulator = struct {
         };
     }
 
-    fn getSrcValue(self: *const Simulator, T: type, src: SrcType) !T {
+    fn getSrcValue(self: *const Simulator, T: type, src: SrcOperand) !T {
         switch (src) {
             .memory => |mem| return self.memory.getAs(T, calcMemAddress(mem, self.registers)),
             .immediate => |imm| return imm.as(T),
@@ -161,7 +164,7 @@ pub const Simulator = struct {
         }
     }
 
-    fn getDstValue(self: *const Simulator, T: type, dst: DstType) !T {
+    fn getDstValue(self: *const Simulator, T: type, dst: DstOperand) !T {
         switch (dst) {
             .register => |reg| return switch (T) {
                 u8 => self.registers.getByte(reg),
@@ -173,7 +176,7 @@ pub const Simulator = struct {
         }
     }
 
-    fn setValue(self: *Simulator, T: type, dst: DstType, value: T) !void {
+    fn setValue(self: *Simulator, T: type, dst: DstOperand, value: T) !void {
         switch (dst) {
             .register => |reg| return self.registers.setAs(T, reg, value),
             .memory => |mem| return self.memory.setAs(T, calcMemAddress(mem, self.registers), value),
@@ -184,7 +187,7 @@ pub const Simulator = struct {
 
 const BinaryOperation = enum { Add, Sub, Cmp, Mov };
 
-fn toBinaryOp(opcode: Opcode) ?BinaryOperation {
+fn toBinaryOp(opcode: Operation) ?BinaryOperation {
     switch (opcode) {
         .add_rm_with_r_to_either, .add_imm_to_rm, .add_imm_to_acc => return .Add,
         .sub_rm_and_r_to_either, .sub_imm_to_rm, .sub_imm_to_acc => return .Sub,
@@ -268,252 +271,4 @@ fn calcMemAddress(mem: MemoryOperand, regs: Registers) u16 {
         .DIRECT_ADDRESS => return offset,
         .BX => return regs.getWord(.BX) + offset,
     }
-}
-
-pub const Registers = struct {
-    // [AX_LO, AX_HI, BX_LO, BX_HI, CX_LO, CX_HI, DX_LO, DX_HI, SP_LO, SP_HI, BP_LO, BP_HI, SI_LO, SI_HI, DI_LO, DI_HI, ES, CS, SS, DS, IP]
-    data: [26]u8 = [_]u8{0} ** 26,
-
-    flags: struct {
-        Carry: bool = false,
-        Parity: bool = false,
-        AuxCarry: bool = false,
-        Zero: bool = false,
-        Sign: bool = false,
-        Overflow: bool = false,
-    } = .{},
-
-    // Register byte offsets
-    const AX_OFFSET = 0;
-    const BX_OFFSET = 2;
-    const CX_OFFSET = 4;
-    const DX_OFFSET = 6;
-    const SP_OFFSET = 8;
-    const BP_OFFSET = 10;
-    const SI_OFFSET = 12;
-    const DI_OFFSET = 14;
-    const ES_OFFSET = 16;
-    const CS_OFFSET = 18;
-    const SS_OFFSET = 20;
-    const DS_OFFSET = 22;
-    const IP_OFFSET = 24;
-
-    // Set register value based on operation type
-    pub fn set(self: *Registers, operates_on: OperatesOn, dst: RegisterType, value: u16) void {
-        switch (operates_on) {
-            .Byte => self.setByte(dst, @intCast(value & 0xFF)),
-            .Word => self.setWord(dst, value),
-        }
-    }
-
-    // Set 8-bit register
-    pub fn setByte(self: *Registers, dst: RegisterType, value: u8) void {
-        switch (dst) {
-            .AL => self.data[AX_OFFSET] = value,
-            .AH => self.data[AX_OFFSET + 1] = value,
-            .BL => self.data[BX_OFFSET] = value,
-            .BH => self.data[BX_OFFSET + 1] = value,
-            .CL => self.data[CX_OFFSET] = value,
-            .CH => self.data[CX_OFFSET + 1] = value,
-            .DL => self.data[DX_OFFSET] = value,
-            .DH => self.data[DX_OFFSET + 1] = value,
-            .AX => self.data[AX_OFFSET] = value,
-            .BX => self.data[BX_OFFSET] = value,
-            .CX => self.data[CX_OFFSET] = value,
-            .DX => self.data[DX_OFFSET] = value,
-            .SP => self.data[SP_OFFSET] = value,
-            .BP => self.data[BP_OFFSET] = value,
-            .SI => self.data[SI_OFFSET] = value,
-            .DI => self.data[DI_OFFSET] = value,
-            .ES => self.data[ES_OFFSET] = value,
-            .CS => self.data[CS_OFFSET] = value,
-            .SS => self.data[SS_OFFSET] = value,
-            .DS => self.data[DS_OFFSET] = value,
-            .IP => self.data[IP_OFFSET] = value,
-        }
-    }
-
-    // Set 16-bit register
-    pub fn setWord(self: *Registers, dst: RegisterType, value: u16) void {
-        assert(isWideRegister(dst));
-        const lo: u8 = @intCast(value & 0xFF);
-        const hi: u8 = @intCast((value >> 8) & 0xFF);
-
-        switch (dst) {
-            .AX => {
-                self.data[AX_OFFSET] = lo;
-                self.data[AX_OFFSET + 1] = hi;
-            },
-            .BX => {
-                self.data[BX_OFFSET] = lo;
-                self.data[BX_OFFSET + 1] = hi;
-            },
-            .CX => {
-                self.data[CX_OFFSET] = lo;
-                self.data[CX_OFFSET + 1] = hi;
-            },
-            .DX => {
-                self.data[DX_OFFSET] = lo;
-                self.data[DX_OFFSET + 1] = hi;
-            },
-            .SP => {
-                self.data[SP_OFFSET] = lo;
-                self.data[SP_OFFSET + 1] = hi;
-            },
-            .BP => {
-                self.data[BP_OFFSET] = lo;
-                self.data[BP_OFFSET + 1] = hi;
-            },
-            .SI => {
-                self.data[SI_OFFSET] = lo;
-                self.data[SI_OFFSET + 1] = hi;
-            },
-            .DI => {
-                self.data[DI_OFFSET] = lo;
-                self.data[DI_OFFSET + 1] = hi;
-            },
-            .ES => {
-                self.data[ES_OFFSET] = lo;
-                self.data[ES_OFFSET + 1] = hi;
-            },
-            .CS => {
-                self.data[CS_OFFSET] = lo;
-                self.data[CS_OFFSET + 1] = hi;
-            },
-            .SS => {
-                self.data[SS_OFFSET] = lo;
-                self.data[SS_OFFSET + 1] = hi;
-            },
-            .DS => {
-                self.data[DS_OFFSET] = lo;
-                self.data[DS_OFFSET + 1] = hi;
-            },
-            .IP => {
-                self.data[IP_OFFSET] = lo;
-                self.data[IP_OFFSET + 1] = hi;
-            },
-            else => unreachable,
-        }
-    }
-
-    pub fn setAs(self: *Registers, T: type, dst: RegisterType, value: anytype) void {
-        switch (T) {
-            u8 => return self.setByte(dst, @as(T, value)),
-            u16 => return self.setWord(dst, @as(T, value)),
-            else => unreachable,
-        }
-    }
-
-    // Get 8-bit register value
-    pub fn getByte(self: *const Registers, reg: RegisterType) u8 {
-        switch (reg) {
-            .AL => return self.data[AX_OFFSET],
-            .AH => return self.data[AX_OFFSET + 1],
-            .BL => return self.data[BX_OFFSET],
-            .BH => return self.data[BX_OFFSET + 1],
-            .CL => return self.data[CX_OFFSET],
-            .CH => return self.data[CX_OFFSET + 1],
-            .DL => return self.data[DX_OFFSET],
-            .DH => return self.data[DX_OFFSET + 1],
-            .AX => return self.data[AX_OFFSET],
-            .BX => return self.data[BX_OFFSET],
-            .CX => return self.data[CX_OFFSET],
-            .DX => return self.data[DX_OFFSET],
-            .SP => return self.data[SP_OFFSET],
-            .BP => return self.data[BP_OFFSET],
-            .SI => return self.data[SI_OFFSET],
-            .DI => return self.data[DI_OFFSET],
-            .ES => return self.data[ES_OFFSET],
-            .CS => return self.data[CS_OFFSET],
-            .SS => return self.data[SS_OFFSET],
-            .DS => return self.data[DS_OFFSET],
-            .IP => return self.data[IP_OFFSET],
-        }
-    }
-
-    // Get 16-bit register value
-    pub fn getWord(self: *const Registers, reg: RegisterType) u16 {
-        assert(isWideRegister(reg));
-        var offset: usize = 0;
-
-        switch (reg) {
-            .AX => offset = AX_OFFSET,
-            .BX => offset = BX_OFFSET,
-            .CX => offset = CX_OFFSET,
-            .DX => offset = DX_OFFSET,
-            .SP => offset = SP_OFFSET,
-            .BP => offset = BP_OFFSET,
-            .SI => offset = SI_OFFSET,
-            .DI => offset = DI_OFFSET,
-            .ES => offset = ES_OFFSET,
-            .CS => offset = CS_OFFSET,
-            .SS => offset = SS_OFFSET,
-            .DS => offset = DS_OFFSET,
-            .IP => offset = IP_OFFSET,
-            else => unreachable,
-        }
-
-        return @as(u16, self.data[offset]) | (@as(u16, self.data[offset + 1]) << 8);
-    }
-
-    pub fn getAs(self: *const Registers, T: type, reg: RegisterType) T {
-        switch (T) {
-            u8 => return self.getByte(reg),
-            u16 => return self.getWord(reg),
-            else => unreachable,
-        }
-    }
-};
-
-pub const Memory = struct {
-    // Not going to do segmented memory, 64k is all we can address
-    data: [65536]u8 = [_]u8{0} ** 65536,
-
-    pub fn setByte(self: *Memory, address: u16, value: u8) void {
-        self.data[address] = value;
-    }
-
-    pub fn setWord(self: *Memory, address: u16, value: u16) void {
-        const lo: u8 = @intCast(value & 0xFF);
-        const hi: u8 = @intCast((value >> 8) & 0xFF);
-        self.data[address] = lo;
-        self.data[address + 1] = hi;
-    }
-
-    pub fn setAs(self: *Memory, T: type, address: u16, value: T) void {
-        switch (T) {
-            u8 => self.data[address] = value,
-            u16 => self.setWord(address, value),
-            else => unreachable,
-        }
-    }
-
-    pub fn getByte(self: *const Memory, address: u16) u8 {
-        return self.data[address];
-    }
-
-    pub fn getWord(self: *const Memory, address: u16) u16 {
-        const lo: u16 = @as(u16, self.data[address]);
-        const hi: u16 = @as(u16, self.data[address + 1]) << 8;
-        return lo | hi;
-    }
-
-    pub fn getAs(self: *const Memory, T: type, address: u16) T {
-        switch (T) {
-            u8 => return self.data[address],
-            u16 => return self.getWord(address),
-            else => unreachable,
-        }
-    }
-};
-
-fn isByteRegister(reg: RegisterType) bool {
-    switch (reg) {
-        .AL, .AH, .BL, .BH, .CL, .CH, .DL, .DH => return true,
-        else => return false,
-    }
-}
-
-fn isWideRegister(reg: RegisterType) bool {
-    return !isByteRegister(reg);
 }

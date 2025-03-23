@@ -3,7 +3,6 @@ const std = @import("std");
 
 const nasm = @import("nasm.zig");
 const x86 = @import("x86.zig");
-const x86_SimRegisters = @import("x86/simulator.zig").Registers;
 
 test "Homework - Listing 37" {
     try testDecodeEncodeListing("listing_0037_single_register_mov");
@@ -181,8 +180,8 @@ test "Homework - Listing 52" {
     try simulateListing("listing_0052_memory_add_loop", expected_regs);
 }
 
-fn parseHomeworkResults(comptime in: []const u8) x86_SimRegisters {
-    var result = x86_SimRegisters{};
+fn parseHomeworkResults(comptime in: []const u8) x86.Registers {
+    var result = x86.Registers{};
 
     var lines = std.mem.tokenizeScalar(u8, in, '\n');
     while (lines.next()) |line| {
@@ -235,11 +234,11 @@ fn parseHomeworkResults(comptime in: []const u8) x86_SimRegisters {
     return result;
 }
 
-fn simulateListing(comptime listing_file_name: []const u8, expected_regs: x86_SimRegisters) !void {
+fn simulateListing(comptime listing_file_name: []const u8, expected_regs: x86.Registers) !void {
     const data_dir = "data";
     const in_bin_path = std.fmt.comptimePrint("{s}/{s}", .{ data_dir, listing_file_name });
     const file_content = @embedFile(in_bin_path);
-    const instructions = try x86.decode(std.testing.allocator, file_content);
+    const instructions = try x86.toInstructionList(std.testing.allocator, file_content);
     defer instructions.deinit();
 
     var sim = try x86.Simulator.init(instructions.items);
@@ -261,10 +260,10 @@ test "Simulator Testbench" {
     const bin = try runNasm(alloc, asm_instructions, file_name);
     defer alloc.free(bin);
 
-    const instructions = try x86.decode(alloc, bin);
+    const instructions = try x86.toInstructionList(alloc, bin);
     defer instructions.deinit();
 
-    var expected_registers = x86_SimRegisters{};
+    var expected_registers = x86.Registers{};
     var sim = try x86.Simulator.init(instructions.items);
     try std.testing.expectEqual(0, sim.cur_instruction_idx);
     try expectEqualRegisters(expected_registers, sim.registers);
@@ -300,7 +299,7 @@ fn testEncodeDecodeWithAsmDiff(comptime asm_instruction: [:0]const u8) !void {
     defer alloc.free(got_bin);
 
     // 2. Decode assembled bin
-    const instructions = try x86.decode(alloc, got_bin);
+    const instructions = try x86.toInstructionList(alloc, got_bin);
     defer instructions.deinit();
     const got_asm = try x86.toAsm(alloc, instructions.items);
     defer got_asm.deinit();
@@ -339,7 +338,7 @@ fn testDecodeEncodeListing(comptime listing_file_name: []const u8) !void {
     defer alloc.free(want_asm);
     const want_bin = @embedFile(in_bin_path);
 
-    const instructions = try x86.decode(alloc, want_bin[0..]);
+    const instructions = try x86.toInstructionList(alloc, want_bin[0..]);
     defer instructions.deinit();
 
     const got_asm = try x86.toAsm(alloc, instructions.items);
@@ -358,7 +357,7 @@ fn testDecodeEncodeListing(comptime listing_file_name: []const u8) !void {
     std.log.info("Success!\n", .{});
 }
 
-fn expectEqualRegisters(expected: x86_SimRegisters, actual: x86_SimRegisters) !void {
+fn expectEqualRegisters(expected: x86.Registers, actual: x86.Registers) !void {
     if (!std.meta.eql(expected.data, actual.data)) {
         std.log.err("Found register diff. Printing register diff...\nAL AH BL BH CL CH DL DH|-SP--|-BP--|-SI--|-DI--|", .{});
         std.testing.expectEqualSlices(u8, expected.data[0..16], actual.data[0..16]) catch {};

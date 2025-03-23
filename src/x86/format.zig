@@ -1,20 +1,20 @@
 const std = @import("std");
 
-const ImmediateField = @import("operands.zig").ImmediateField;
-const instructions = @import("instruction.zig");
-const JumpDestination = @import("operands.zig").JumpDestination;
-const Memory = @import("operands.zig").Memory;
-const Register = @import("operands.zig").Register;
+const ImmediateOperand = @import("instruction.zig").ImmediateOperand;
+const Instruction = @import("instruction.zig").Instruction;
+const JumpDestination = @import("instruction.zig").JumpDestination;
+const MemoryOperand = @import("memory.zig").MemoryOperand;
+const RegisterName = @import("register.zig").RegisterName;
 
-pub fn fmt(to_format: instructions.Instruction) std.fmt.Formatter(asmFormatter.instruction) {
+pub fn fmt(to_format: Instruction) std.fmt.Formatter(asmFormatter.instruction) {
     return .{ .data = to_format };
 }
 
 const asmFormatter = struct {
-    const EffectiveAddressCalculation = @import("fields.zig").EffectiveAddressCalculation;
+    const EffectiveAddressCalculation = @import("memory.zig").EffectiveAddressCalculation;
 
     fn memory(
-        mem: Memory,
+        mem: MemoryOperand,
         comptime _: []const u8,
         _: std.fmt.FormatOptions,
         writer: anytype,
@@ -73,13 +73,13 @@ const asmFormatter = struct {
         }
     }
 
-    fn immediateField(
-        field: ImmediateField,
+    fn immediateOperand(
+        operand: ImmediateOperand,
         comptime _: []const u8,
         _: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
-        switch (field.value) {
+        switch (operand.value) {
             .byte => |b| {
                 try writer.print("{d}", .{b});
             },
@@ -110,7 +110,7 @@ const asmFormatter = struct {
     }
 
     fn instruction(
-        to_format: instructions.Instruction,
+        to_format: Instruction,
         comptime _: []const u8,
         _: std.fmt.FormatOptions,
         writer: anytype,
@@ -169,14 +169,14 @@ const asmFormatter = struct {
 
         if (to_format.src) |src| {
             switch (to_format.dst) {
-                .register => |reg| try writer.print(" {s},", .{std.enums.tagName(Register, reg).?}),
+                .register => |reg| try writer.print(" {s},", .{std.enums.tagName(RegisterName, reg).?}),
                 .memory => |mem| try writer.print(" {s},", .{fmtMemory(mem)}),
                 .jump => unreachable,
             }
 
             switch (src) {
-                .register => |reg| try writer.print(" {s}", .{std.enums.tagName(Register, reg).?}),
-                .immediate => |i| try writer.print(" {s}", .{fmtImmediate(i)}),
+                .register => |reg| try writer.print(" {s}", .{std.enums.tagName(RegisterName, reg).?}),
+                .immediate => |imm| try writer.print(" {s}", .{fmtImmediate(imm)}),
                 .memory => |mem| try writer.print(" {s}", .{fmtMemory(mem)}),
             }
         } else {
@@ -189,11 +189,11 @@ const asmFormatter = struct {
     }
 };
 
-fn fmtMemory(to_format: Memory) std.fmt.Formatter(asmFormatter.memory) {
+fn fmtMemory(to_format: MemoryOperand) std.fmt.Formatter(asmFormatter.memory) {
     return .{ .data = to_format };
 }
 
-fn fmtImmediate(to_format: ImmediateField) std.fmt.Formatter(asmFormatter.immediateField) {
+fn fmtImmediate(to_format: ImmediateOperand) std.fmt.Formatter(asmFormatter.immediateOperand) {
     return .{ .data = to_format };
 }
 
@@ -207,7 +207,7 @@ const SizeSpecifier = enum {
     Word,
 };
 
-fn getExplicitSizeSpecifier(instruction: instructions.Instruction) SizeSpecifier {
+fn getExplicitSizeSpecifier(instruction: Instruction) SizeSpecifier {
     // Check if the destination is a memory operand.
     const dst_is_memory = switch (instruction.dst) {
         .memory => true,

@@ -204,7 +204,7 @@ fn draw_asm(state: *State) !void {
             try tl_asm.addText("\n", .{});
         }
 
-        ip += state.sim.instructions[i].size();
+        ip += x86.size.instruction(state.sim.instructions[i]);
     }
 }
 

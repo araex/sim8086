@@ -29,7 +29,7 @@ pub fn main() !void {
     const file_content = try readFile(alloc, file_path);
     defer alloc.free(file_content);
 
-    const decoded = try x86.decode(alloc, file_content);
+    const decoded = try x86.toInstructionList(alloc, file_content);
     defer decoded.deinit();
     std.log.info("Decoded '{d}' bytes from '{s}'", .{ file_content.len, file_path });
 
