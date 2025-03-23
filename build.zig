@@ -24,6 +24,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    addCheckStep(b, main_module);
     main_module.addImport("x86", x86_module);
     main_module.addImport("dvui", dvui_dep.module("dvui_sdl"));
 

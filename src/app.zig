@@ -3,7 +3,8 @@ const builtin = @import("builtin");
 
 const dvui = @import("dvui");
 
-const hexViewer = @import("hex_viewer.zig").hexViewer;
+const drawHexView = @import("view_hex.zig").drawHexView;
+const MemAsTexture = @import("view_pixels.zig").MemAsTexture;
 const theme = @import("theme.zig");
 const x86 = @import("x86.zig");
 
@@ -21,6 +22,8 @@ const State = struct {
 
     // Pre-allocated strings for all registers (excluding flags)
     register_strings: [num_registers][:0]u8,
+
+    pixels: MemAsTexture,
 
     ui_scale: f32,
     allocator: std.mem.Allocator,
@@ -59,12 +62,15 @@ const State = struct {
             .sim = simulator,
             .instr_asm = instr_asm,
             .register_strings = register_strings,
+            .pixels = MemAsTexture.init(simulator.memory, 256, 64, 64, 4.0),
             .ui_scale = 1.2,
             .allocator = alloc,
         };
     }
 
     pub fn deinit(self: *State) void {
+        self.pixels.deinit();
+
         // Free each individual instruction string
         for (self.instr_asm) |asm_str| {
             self.allocator.free(asm_str);
@@ -142,7 +148,7 @@ pub fn run(alloc: std.mem.Allocator, simulator: x86.Simulator) !void {
         _ = dvui.backend.c.SDL_SetRenderDrawColor(backend.renderer, 0, 0, 0, 255);
         _ = dvui.backend.c.SDL_RenderClear(backend.renderer);
 
-        try draw_ui(&state);
+        try drawUI(&state);
 
         // marks end of dvui frame, don't call dvui functions after this
         // - sends all dvui stuff to backend for rendering, must be called before renderPresent()
@@ -161,7 +167,7 @@ pub fn run(alloc: std.mem.Allocator, simulator: x86.Simulator) !void {
     }
 }
 
-fn draw_asm(state: *State) !void {
+fn drawAsm(state: *State) !void {
     var tl_asm = try dvui.textLayout(
         @src(),
         .{},
@@ -194,7 +200,7 @@ fn draw_asm(state: *State) !void {
     }
 }
 
-fn draw_registers(state: *State) !void {
+fn drawRegisters(state: *State) !void {
     // Update the register strings before displaying
     state.updateRegisterStrings();
 
@@ -303,7 +309,7 @@ fn buttonIconAndLabel(
     return bw.clicked();
 }
 
-fn draw_controls(state: *State) !void {
+fn drawControls(state: *State) !void {
     var hbox = try dvui.box(@src(), .horizontal, .{});
     defer hbox.deinit();
 
@@ -311,11 +317,22 @@ fn draw_controls(state: *State) !void {
     if (!state.sim.isDone()) {
         if (try buttonIconAndLabel(@src(), "step", dvui.entypo.controller_play, opts)) {
             try state.sim.step();
+            state.pixels.update(state.sim.memory);
+        }
+        if (try buttonIconAndLabel(@src(), "step 100", dvui.entypo.controller_fast_forward, opts)) {
+            for (0..100) |_| {
+                if (state.sim.isDone()) {
+                    break;
+                }
+                try state.sim.step();
+            }
+            state.pixels.update(state.sim.memory);
         }
         if (try dvui.buttonIcon(@src(), "play", dvui.entypo.controller_next, .{}, opts)) {
             while (!state.sim.isDone()) {
                 try state.sim.step();
             }
+            state.pixels.update(state.sim.memory);
         }
 
         if (state.sim.isDone()) {
@@ -328,10 +345,11 @@ fn draw_controls(state: *State) !void {
     }
     if (try buttonIconAndLabel(@src(), "reset", dvui.entypo.ccw, opts)) {
         state.sim.reset();
+        state.pixels.update(state.sim.memory);
     }
 }
 
-fn draw_ui(state: *State) !void {
+fn drawUI(state: *State) !void {
     var scroll = try dvui.scrollArea(
         @src(),
         .{},
@@ -350,38 +368,45 @@ fn draw_ui(state: *State) !void {
     {
         var hbox = try dvui.box(@src(), .horizontal, .{});
         defer hbox.deinit();
-        try draw_registers(state);
-    }
-    try draw_controls(state);
 
-    {
-        var hbox = try dvui.box(@src(), .horizontal, .{});
-        defer hbox.deinit();
+        {
+            var vbox = try dvui.box(@src(), .vertical, .{});
+            defer vbox.deinit();
+            try drawRegisters(state);
+            try drawControls(state);
+        }
 
-        try draw_asm(state);
-        try hexViewer(@src(), state.sim);
-    }
-
-    const label = if (dvui.Examples.show_demo_window) "Hide Demo Window" else "Show Demo Window";
-    if (try dvui.button(@src(), label, .{}, .{})) {
-        dvui.Examples.show_demo_window = !dvui.Examples.show_demo_window;
+        try state.pixels.draw();
     }
 
     {
         var hbox = try dvui.box(@src(), .horizontal, .{});
         defer hbox.deinit();
 
-        if (try dvui.button(@src(), "Zoom In", .{}, .{})) {
-            state.ui_scale = @round(dvui.themeGet().font_body.size * state.ui_scale + 1.0) / dvui.themeGet().font_body.size;
-        }
-
-        if (try dvui.button(@src(), "Zoom Out", .{}, .{})) {
-            state.ui_scale = @round(dvui.themeGet().font_body.size * state.ui_scale - 1.0) / dvui.themeGet().font_body.size;
-        }
+        try drawAsm(state);
+        try drawHexView(state.sim);
     }
 
-    // look at demo() for examples of dvui widgets, shows in a floating window
-    try dvui.Examples.demo();
+    // const label = if (dvui.Examples.show_demo_window) "Hide Demo Window" else "Show Demo Window";
+    // if (try dvui.button(@src(), label, .{}, .{})) {
+    //     dvui.Examples.show_demo_window = !dvui.Examples.show_demo_window;
+    // }
+
+    // {
+    //     var hbox = try dvui.box(@src(), .horizontal, .{});
+    //     defer hbox.deinit();
+
+    //     if (try dvui.button(@src(), "Zoom In", .{}, .{})) {
+    //         state.ui_scale = @round(dvui.themeGet().font_body.size * state.ui_scale + 1.0) / dvui.themeGet().font_body.size;
+    //     }
+
+    //     if (try dvui.button(@src(), "Zoom Out", .{}, .{})) {
+    //         state.ui_scale = @round(dvui.themeGet().font_body.size * state.ui_scale - 1.0) / dvui.themeGet().font_body.size;
+    //     }
+    // }
+
+    // // look at demo() for examples of dvui widgets, shows in a floating window
+    // try dvui.Examples.demo();
 }
 
 // Optional: windows os only

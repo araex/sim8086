@@ -1,6 +1,9 @@
+# sim8086
 Decode and simulate x8086 instructions with in a debug UI. Supports a very [limited set of instructions](https://github.com/araex/sim8086/blob/main/src/x86/opcodes.zig). See `src/data` for example input.
 
 Homework for https://computerenhance.com programming series.
+
+![screenshot](./screenshot.png)
 
 ## Prerequisites
 - zig, tested with 0.15.0-dev.77+aa8aa6625

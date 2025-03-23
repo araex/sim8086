@@ -76,6 +76,9 @@ pub const Simulator = struct {
     pub fn reset(self: *Simulator) void {
         self.cur_instruction_idx = 0;
         self.registers = .{};
+        for (self.program_length..self.memory.data.len) |i| {
+            self.memory.data[i] = 0;
+        }
     }
 
     pub fn isDone(self: *const Simulator) bool {
