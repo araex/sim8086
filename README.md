@@ -13,6 +13,6 @@ To run the tests:
 - Write permissions in hardcoded directory [`out_dir`](https://github.com/araex/sim8086/blob/main/src/nasm.zig#L5)
 
 ## Usage
-`zig build sim8086 -- src/data/listing_0045_challenge_register_movs` build and runs the simulator
+`zig build sim8086 -- src/data/listing_0055_challenge_rectangle` build and runs the simulator
 
 `zig build test` builds and runs the tests.

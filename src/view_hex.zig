@@ -22,7 +22,7 @@ pub fn drawHexView(sim: x86.Simulator) !void {
         var tl = try dvui.textLayout(@src(), .{}, .{ .expand = .both });
         defer tl.deinit();
 
-        try tl.addText("        00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\n", theme.optionTextDim());
+        try tl.addText("       00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\n", theme.optionTextDim());
         for (0..numRowsToShow) |i| {
             const addr: usize = row_start + i * bytesPerRow;
             try tl.format("0x{X:0>4} ", .{addr}, theme.optionTextDim());
