@@ -210,6 +210,17 @@ test "Homework - Listing 54" {
     try simulateListing("listing_0054_draw_rectangle", expected_regs);
 }
 
+test "Homework - Listing 55" {
+    const expected =
+        \\bx: 0x4004 (16388)
+        \\bp: 0x02fc (764)
+        \\ip: 0x0044 (68)
+    ;
+    var expected_regs = parseHomeworkResults(expected);
+    expected_regs.flags = .{};
+    try simulateListing("listing_0055_challenge_rectangle", expected_regs);
+}
+
 fn parseHomeworkResults(comptime in: []const u8) x86.Registers {
     var result = x86.Registers{};
 
